@@ -2,7 +2,7 @@
 # GLOBALS                                                                       #
 #################################################################################
 
-PROJECT_NAME = diseases in temporal comorbidity networks
+PROJECT_NAME = "diseases in temporal comorbidity networks"
 PYTHON_VERSION = 3.10
 PYTHON_INTERPRETER = python
 
@@ -61,7 +61,7 @@ create_environment:
 ## Make dataset
 .PHONY: data
 data: requirements
-	$(PYTHON_INTERPRETER) tapas/dataset.py
+	$(PYTHON_INTERPRETER) pipeline.py run
 
 
 #################################################################################
