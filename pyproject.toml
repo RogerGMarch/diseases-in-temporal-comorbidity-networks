@@ -17,9 +17,12 @@ classifiers = [
 ]
 dependencies = [
     "loguru",
+    "networkx",
+    "numpy",
     "pandas",
     "pip",
     "python-dotenv",
+    "python-louvain",
     "requests",
     "ruff",
     "tqdm",
