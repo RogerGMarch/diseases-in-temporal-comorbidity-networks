@@ -1167,6 +1167,107 @@ def critical_nodes_pipeline(
     print("✓ ANALYSIS COMPLETE")
     print("="*80)
 
+# ========================================================================================
+# Summary Table Functions (Added from 007_Table2_Summary.ipynb)
+# ========================================================================================
+
+def count_high_degree_outliers_summary() -> pd.DataFrame:
+    """Count high degree outliers using 20th/80th percentile (final setup)"""
+    logger.info("Counting high degree outliers (80th percentile)...")
+    all_counts = []
+
+    # Iterate through all groups
+    for gender in SEXES:
+        for age_id in AGE_GROUPS.keys():
+            # Load data using existing function
+            df = load_network_and_prevalence(gender, age_id)
+            
+            count = 0
+            if not df.empty:
+                # Calculate Ratio and Log Ratio
+                df['Ratio'] = df['Degree'] / df['Prevalence']
+                # Filter valid ratios
+                valid_nodes = df[df['Ratio'] > 0].copy()
+                
+                if not valid_nodes.empty:
+                    valid_nodes['log_ratio'] = np.log10(valid_nodes['Ratio'])
+                    
+                    # Calculate 80th percentile threshold
+                    upper_bound = valid_nodes['log_ratio'].quantile(0.80)
+                    
+                    # Count high degree outliers (above 80th percentile)
+                    # Notebook uses >= 
+                    count = len(valid_nodes[valid_nodes['log_ratio'] >= upper_bound])
+            
+            all_counts.append({
+                'Sex': gender,
+                'Age_Group': age_id, # Keep as int
+                'Count': count
+            })
+            
+    return pd.DataFrame(all_counts)
+
+@app.command()
+def generate_summary_table():
+    """
+    Generate summary table using FINAL setup from 007_Table2_Summary.ipynb.
+    Requires:
+      - high_mortality_sinks_ZSCORE.csv (run 'mortality_sinks' first)
+      - bridge_edges_mortality_ZSCORE.csv (run 'bridge_edges' first)
+    """
+    logger.info("="*80)
+    logger.info("SUMMARY TABLE - FINAL SETUP")
+    logger.info("="*80)
+    
+    # 1. Count Outliers
+    df_outliers = count_high_degree_outliers_summary()
+    logger.info(f"High degree outliers total: {df_outliers['Count'].sum()}")
+    
+    # 2. Load Sinks
+    sinks_file = PROCESSED_DATA_DIR / 'high_mortality_sinks_ZSCORE.csv'
+    if sinks_file.exists():
+        df_sinks_all = pd.read_csv(sinks_file)
+        # Ensure correct grouping keys
+        df_sinks = df_sinks_all.groupby(['Sex', 'Age_Group']).size().reset_index(name='Count')
+        logger.info(f"High-mortality sinks total: {df_sinks['Count'].sum()}")
+    else:
+        logger.error(f"File not found: {sinks_file}. Please run 'python -m tapas.other_tables mortality-sinks' first.")
+        return
+
+    # 3. Load Bridges
+    bridges_file = PROCESSED_DATA_DIR / 'bridge_edges_mortality_ZSCORE.csv'
+    if bridges_file.exists():
+        df_bridges_all = pd.read_csv(bridges_file)
+        df_bridges = df_bridges_all.groupby(['Sex', 'Age_Group']).size().reset_index(name='Count')
+        logger.info(f"High-mortality bridges total: {df_bridges['Count'].sum()}")
+    else:
+        logger.error(f"File not found: {bridges_file}. Please run 'python -m tapas.other_tables bridge-edges' first.")
+        return
+
+    # 4. Save CSV Summary
+    df_outliers['Type'] = 'High degree outliers (80th p)'
+    df_sinks['Type'] = 'High-mortality sinks (Z-score 20th p)'
+    df_bridges['Type'] = 'High-mortality bridges (Z-score 5th p)'
+    
+    df_all = pd.concat([df_outliers, df_sinks, df_bridges], ignore_index=True)
+    
+    csv_file = PROCESSED_DATA_DIR / 'summary_table_FINAL_SETUP.csv'
+    df_all.to_csv(csv_file, index=False)
+    logger.success(f"Saved summary CSV to: {csv_file}")
+    
+    # Print Final Summary to Console
+    print("\n" + "="*80)
+    print("FINAL SUMMARY")
+    print("="*80)
+    for type_name in df_all['Type'].unique():
+        subset = df_all[df_all['Type'] == type_name]
+        total = subset['Count'].sum()
+        female = subset[subset['Sex'] == 'Female']['Count'].sum()
+        male = subset[subset['Sex'] == 'Male']['Count'].sum()
+        print(f"\n{type_name}:")
+        print(f"  Total: {total} (Female: {female}, Male: {male})")
+    print("\n" + "="*80)
+
 @app.command()
 def main(
     output_filename: str = "outliers_data_S1.csv"
