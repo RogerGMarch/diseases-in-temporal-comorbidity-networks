@@ -121,8 +121,8 @@ Dataset from Figshare: [Comorbidity Networks From Population-Wide Health Data](h
 
 ## Citation
 
-[Add your paper citation here]
+Yuri Gardinazzi, Roger Gonzaléz March, Suprabhath Kalahasti, Andrea Montaño Ramirez, Matteo Neri, Cicely Nguyen, Giovanni Palermo, Erik Weis, Katharina Ledebur, Elma Dervić. **"Characterization Of Diseases In Temporal Comorbidity Networks"**. arXiv:2506.22136 (physics). 2025. [https://arxiv.org/abs/2506.22136](https://arxiv.org/abs/2506.22136)
 
 ## License
 
-[Add license information here]
+MIT License
