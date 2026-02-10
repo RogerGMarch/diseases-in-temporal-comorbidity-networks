@@ -281,37 +281,57 @@ def print_threshold_statistics(df: pd.DataFrame):
         
         print(f"{p:11}th | {count:10,} | {pct:14.1f}% | {female_count:8,} | {male_count:8,}")
 
-@app.command()
-def main():
-    """Visualization script for mortality differences and z-scores."""
-    logger.info("Starting Visualizations...")
+def generate_all_plots():
+    """
+    Generate all visualization plots. Called by pipeline.
+    
+    This function is automatically called by the main pipeline to generate
+    all figures showing mortality distributions and z-score statistics.
+    """
+    logger.info("Loading edge data for visualizations...")
     all_data = []
     
     for gender in SEXES:
         for age_id in AGE_GROUPS.keys():
-            logger.info(f"Loading {gender} - Age Group {age_id}...")
-            # Use load_edge_metrics from centralized features
             df = NetworkAnalyzer.load_edge_metrics(gender, age_id)
             if not df.empty:
                 all_data.append(df)
-            
+    
     if not all_data:
-        logger.error("No data loaded. Check files.")
-        raise typer.Exit(code=1)
-        
+        logger.warning("No edge data found for plotting")
+        return
+    
     df_all = pd.concat(all_data, ignore_index=True)
-    logger.success(f"Loaded {len(df_all):,} edges for visualization.")
+    logger.info(f"Loaded {len(df_all):,} edges for visualization")
     
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Plot 1: Mortality Histograms
+    # Generate plots
     plot_mortality_difference_histograms(df_all, FIGURES_DIR / 'mortality_difference_histograms.png')
-    
-    # Plot 2: Z-Score Distributions
     plot_zscore_distributions(df_all, FIGURES_DIR / 'zscore_distributions.png')
     
-    # Print Stats
-    print_threshold_statistics(df_all)
+    logger.success(f"Generated 2 plots in {FIGURES_DIR}")
+
+
+@app.command()
+def main():
+    """Visualization script for mortality differences and z-scores (standalone)."""
+    logger.info("Starting Visualizations...")
+    
+    # Use the generate_all_plots function
+    generate_all_plots()
+    
+    # Also print statistics
+    all_data = []
+    for gender in SEXES:
+        for age_id in AGE_GROUPS.keys():
+            df = NetworkAnalyzer.load_edge_metrics(gender, age_id)
+            if not df.empty:
+                all_data.append(df)
+    
+    if all_data:
+        df_all = pd.concat(all_data, ignore_index=True)
+        print_threshold_statistics(df_all)
     
     logger.success("Visualizations and Statistics Complete.")
 

@@ -16,11 +16,9 @@ from typing import Set, Dict, List, Tuple
 from tapas.config import PROCESSED_DATA_DIR, FIGURES_DIR, SEXES, AGE_GROUPS
 from tapas.features import NetworkAnalyzer
 
-# Import core calculation logic from the other analysis modules
-# These modules must exist in the tapas package
-from tapas.outlier_detection import detect_outliers_exact
-from tapas.mortality_analysis import identify_high_mortality_sinks_zscore
-from tapas.bridge_edges import identify_critical_bridges
+# Import core calculation logic from the analysis modules
+from tapas.analysis.outliers import detect_outliers_exact, identify_high_mortality_sinks_zscore
+from tapas.analysis.bridges import identify_critical_bridges
 
 app = typer.Typer()
 
@@ -51,11 +49,7 @@ def compute_jaccard(set1: Set[str], set2: Set[str]) -> float:
 def get_raw_edge_weights(icd_codes: List[str], sex: str, age_group: int) -> List[float]:
     """
     Extract raw edge weights for specific nodes from the adjacency matrix.
-    Note: We rely on NetworkAnalyzer loading the graph. To get weights > 1.5,
-    we load with threshold=1.5 but we need the actual values.
-    
-    Workaround: NetworkAnalyzer.load_adjacency_matrix with threshold returns 
-    an unweighted graph (1.0). To get weights, we must load raw.
+    Returns unthresholded edge weights to examine distribution of connection strengths.
     """
     paths = NetworkAnalyzer._resolve_paths(sex, age_group)
     if not paths["adjacency"].exists():
@@ -70,6 +64,9 @@ def get_raw_edge_weights(icd_codes: List[str], sex: str, age_group: int) -> List
     # Map ICD to index (0-based) using the standard ICD file
     try:
         icd_df = pd.read_csv(paths["icd_codes"])
+        # Handle column name mapping: Id->diagnose_id, Code->icd_code, ShortDescription->descr
+        if 'Id' in icd_df.columns:
+            icd_df = icd_df.rename(columns={'Id': 'diagnose_id', 'Code': 'icd_code', 'ShortDescription': 'descr'})
         # Map: ICD code -> diagnose_id (1-based) -> index (0-based)
         icd_to_idx = dict(zip(icd_df['icd_code'], icd_df['diagnose_id'] - 1))
     except Exception:
@@ -106,6 +103,9 @@ def get_bridge_weights(bridges_df: pd.DataFrame) -> List[float]:
         try:
             adj = np.loadtxt(paths["adjacency"], delimiter=" ")
             icd_df = pd.read_csv(paths["icd_codes"])
+            # Handle column name mapping: Id->diagnose_id, Code->icd_code, ShortDescription->descr
+            if 'Id' in icd_df.columns:
+                icd_df = icd_df.rename(columns={'Id': 'diagnose_id', 'Code': 'icd_code', 'ShortDescription': 'descr'})
             icd_to_idx = dict(zip(icd_df['icd_code'], icd_df['diagnose_id'] - 1))
         except: continue
         
@@ -258,7 +258,7 @@ def complete_analysis():
             max_val = max(all_weights)
             
             # --- PLOT 1: Separate Histograms (Side-by-Side) ---
-            # Using log bins common across all for comparison, or individual? Notebook uses common.
+            # Using log bins common across all for comparison.
             log_bins = np.logspace(np.log10(1.5), np.log10(max_val), 50)
             
             fig, axes = plt.subplots(1, 3, figsize=(15, 5))

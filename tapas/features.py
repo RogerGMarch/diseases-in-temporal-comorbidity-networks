@@ -1,4 +1,30 @@
-"""Feature engineering and network analysis utilities."""
+"""
+Network analysis methodology and data integration.
+
+This analysis implements the paper's network metric calculations:
+
+Network Metrics Computed:
+1. Node-level metrics: degree, betweenness centrality, closeness centrality
+2. Graph-level metrics: average path length, modularity, clustering coefficient
+3. Integration with clinical data: prevalence, mortality rates, disease descriptions
+
+Data Sources:
+- Adjacency matrices: Comorbidity network structure (16 networks: 2 sexes × 8 age groups)
+- ICD-10 codes: Disease identifiers and descriptions
+- Prevalence data: Disease frequency in population (1997-2014)
+- Mortality data: In-hospital mortality rates by disease
+
+Methodology:
+- Betweenness centrality calculated on complete graph before filtering
+- Isolated nodes (degree = 0) removed from most analyses
+- Normalization applied for cross-network comparability
+- Community detection using Louvain algorithm (maximizes modularity)
+
+Paper References:
+- Table 1: Network properties across demographic groups
+- Supplementary materials: Detailed network metrics
+- Methods section: Metric definitions and calculations
+"""
 
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -38,24 +64,31 @@ class NetworkAnalyzer:
         Internal helper to resolve all file paths for a specific Sex/Age group.
         Handles the fallback logic between INTERIM and root DATA directories.
         """
-        # Base Data Path Logic
+        # Base Data Path Logic for adjacency matrices and prevalence
         base_data_path = INTERIM_DATA_DIR / "extracted" / "Data"
         if not base_data_path.exists():
             base_data_path = DATA_DIR
 
         # File definitions
         adj_filename = f"Adj_Matrix_{sex}_ICD_age_{age_group_id}.csv"
-        mort_filename = f"mortality_diag_{sex}.csv"
+        mort_filename = f"mortality_diag_{sex.lower()}.csv"
+
+        # ICD diagnosis files are in INTERIM_DATA_DIR, not in extracted/Data
+        icd_codes_path = INTERIM_DATA_DIR / "ICD10_Diagnoses.csv"
+        icd_eng_path = INTERIM_DATA_DIR / "DiagAll_Eng.csv"
+        
+        # Mortality files are in INTERIM_DATA_DIR/mortality
+        mortality_path = INTERIM_DATA_DIR / "mortality" / mort_filename
 
         paths = {
             "adjacency": base_data_path / "3.AdjacencyMatrices" / adj_filename,
-            "icd_codes": base_data_path / "ICD10_Diagnoses_All.csv",
-            "icd_eng": base_data_path / "ICD10_Diagnoses_All_ENG.csv",
+            "icd_codes": icd_codes_path,
+            "icd_eng": icd_eng_path,
             "prevalence": base_data_path / "1.Prevalence" / "Prevalence_Sex_Age_Year_ICD.csv",
-            "mortality": base_data_path / mort_filename,
+            "mortality": mortality_path,
         }
         
-        # Fallback for mortality if not in extracted folder
+        # Fallback for mortality if not in the interim/mortality folder
         if not paths["mortality"].exists():
             paths["mortality"] = DATA_DIR / mort_filename
 
@@ -116,6 +149,9 @@ class NetworkAnalyzer:
         # 2. Load Metadata (ICD, Prev, Mort)
         try:
             icd_df = pd.read_csv(paths["icd_codes"])
+            # Handle column name mapping: Id->diagnose_id, Code->icd_code, ShortDescription->descr
+            if 'Id' in icd_df.columns:
+                icd_df = icd_df.rename(columns={'Id': 'diagnose_id', 'Code': 'icd_code', 'ShortDescription': 'descr'})
             
             # Prevalence (2014 specific)
             prev_df = pd.read_csv(paths["prevalence"]) if paths["prevalence"].exists() else pd.DataFrame()
@@ -193,6 +229,9 @@ class NetworkAnalyzer:
         # 2. Metadata
         try:
             icd_df = pd.read_csv(paths["icd_codes"])
+            # Handle column name mapping: Id->diagnose_id, Code->icd_code, ShortDescription->descr
+            if 'Id' in icd_df.columns:
+                icd_df = icd_df.rename(columns={'Id': 'diagnose_id', 'Code': 'icd_code', 'ShortDescription': 'descr'})
             icd_dict = dict(zip(icd_df['diagnose_id'] - 1, icd_df['icd_code']))
             descr_dict = dict(zip(icd_df['diagnose_id'] - 1, icd_df['descr']))
             

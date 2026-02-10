@@ -1,11 +1,61 @@
-"""Network analysis module for calculating network properties from comorbidity networks."""
+"""
+Network property calculations for comorbidity networks.
+
+This analysis generates Table 1 of the paper by computing network properties
+across all 16 demographic-stratified networks (Female/Male × 8 age groups).
+
+Computed Metrics:
+- Connected Nodes: Number of diseases with at least one comorbidity connection
+- Average Degree: Mean number of comorbidities per disease
+- Average Path Length: Mean shortest path distance between diseases
+- Betweenness Centrality: Identifies "bridge" diseases in network
+- Closeness Centrality: Measures disease accessibility within network
+- Modularity: Quantifies strength of community structure
+- Clustering Coefficient: Tendency for diseases to form tightly connected groups
+
+Methodology:
+- All metrics computed on full networks before filtering
+- Isolated nodes excluded from centrality calculations
+- Normalization applied for cross-network comparability
+- Community detection via Louvain algorithm
+
+Paper Reference:
+- Table 1: Network properties stratified by sex and age group
+- Methods section: Network metric definitions and calculation procedures
+- Results section: Interpretation of network properties
+
+Output Files:
+- network_properties_table.csv: Complete results with all metrics
+- network_properties_table1_format.csv: Formatted for publication (Table 1)
+"""
 
 from pathlib import Path
 from loguru import logger
 import pandas as pd
 
-from tapas.config import PROCESSED_DATA_DIR, SEXES, AGE_GROUPS
+from tapas.config import PROCESSED_DATA_DIR, SEXES, AGE_GROUPS, INTERIM_DATA_DIR, DATA_DIR
 from tapas.features import NetworkAnalyzer
+
+
+def get_adjacency_matrix_path(sex: str, age_num: int) -> Path:
+    """
+    Get the path to the adjacency matrix file for a given sex and age group.
+    
+    Args:
+        sex: "Female" or "Male"
+        age_num: Age group number (1-8)
+        
+    Returns:
+        Path to the adjacency matrix CSV file
+    """
+    # Use the same logic as NetworkAnalyzer._resolve_paths
+    base_data_path = INTERIM_DATA_DIR / "extracted" / "Data"
+    if not base_data_path.exists():
+        base_data_path = DATA_DIR
+    
+    adj_filename = f"Adj_Matrix_{sex}_ICD_age_{age_num}.csv"
+    return base_data_path / "3.AdjacencyMatrices" / adj_filename
+
 
 def analyze_all_networks() -> pd.DataFrame:
     """Analyze all networks and create a table matching Table 1 format."""

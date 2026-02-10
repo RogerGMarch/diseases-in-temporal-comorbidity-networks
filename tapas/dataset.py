@@ -1,3 +1,36 @@
+"""
+Data acquisition and processing for comorbidity networks analysis.
+
+Data Source:
+- Repository: Figshare - Comorbidity Networks From Population-Wide Health Data
+- URL: https://figshare.com/articles/dataset/27102553
+- Population: 8.9 million Austrian hospital inpatients
+- Period: 1997-2014
+- Geographic coverage: Austria, nationwide hospital records
+
+Dataset Contents:
+- Prevalence data: Disease frequency by sex, age group, and year
+- Adjacency matrices: Comorbidity network structure (16 networks)
+- ICD-10 codes: Disease identifiers and descriptions
+- Mortality data: In-hospital mortality rates
+
+Data Structure:
+- Stratification: Sex (Female/Male) × Age (8 groups) × Year (1997-2014)
+- Disease coding: ICD-10 diagnosis codes
+- Networks: 16 comorbidity networks (2 sexes × 8 age groups)
+- Age groups: 0-9, 10-19, 20-29, 30-39, 40-49, 50-59, 60-69, 70-79 years
+
+Processing Workflow:
+1. Download dataset archive from Figshare
+2. Extract to interim directory structure
+3. Process prevalence data into analysis-ready format
+4. Validate adjacency matrix integrity
+
+Paper Reference:
+- Data section: Dataset description and acquisition methodology
+- Methods: Data processing and network construction procedures
+"""
+
 from pathlib import Path
 import re
 from urllib.parse import parse_qs, urlparse

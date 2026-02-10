@@ -1,4 +1,46 @@
-"""Advanced network analysis: prevalence-degree correlation and high-risk disease identification."""
+"""
+Advanced network analysis: prevalence-degree correlation and high-risk disease identification.
+
+This module implements the advanced analyses for Table 2 and related results:
+
+1. Prevalence-Degree Correlation Analysis:
+   - Examines relationship between disease prevalence and network connectivity
+   - Identifies outliers (over/under-connected diseases)
+   - Uses log-ratio to handle wide range of values
+
+2. High-Risk Node Identification:
+   - Identifies diseases with high betweenness centrality AND high mortality
+   - Uses z-score product method for dual-criteria selection
+   - These are "high-mortality sinks" - critical intervention points
+
+3. High-Risk Edge Identification:
+   - Identifies disease pairs with high edge betweenness AND mortality difference
+   - These are "high-mortality bridges" - critical transitions
+   - Requires minimum 30% mortality difference for clinical significance
+
+4. Table 2 Generation:
+   - Summarizes counts of critical diseases across all demographics
+   - Combines results from outlier and high-risk analyses
+
+Paper References:
+- Table 2: Critical disease nodes and edges by sex and age
+- Methods: High-risk disease identification methodology
+- Results: Prevalence-degree correlation patterns
+
+Methodology:
+- Z-score standardization within sex-age strata
+- Percentile-based selection (top 20% for nodes, top 5% for edges)
+- Geometric mean for ranking (after z-product selection)
+
+Usage:
+    python -m tapas.advanced_analysis
+    
+Outputs:
+    - prevalence_degree_analysis.csv: Full correlation analysis
+    - high_risk_nodes.csv: High-mortality sinks
+    - high_risk_edges.csv: High-mortality bridges
+    - table2_critical_diseases.csv: Paper Table 2
+"""
 
 from pathlib import Path
 from typing import Dict, Optional
@@ -7,9 +49,10 @@ from loguru import logger
 import numpy as np
 import pandas as pd
 
-from tapas.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR
+from tapas.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR, AGE_GROUPS, SEXES
 from tapas.features import NetworkAnalyzer
-from tapas.network_analysis import AGE_GROUPS, SEXES, get_adjacency_matrix_path
+from tapas.network_analysis import get_adjacency_matrix_path
+from tapas.utils.statistics import compute_z_score, compute_log_ratio
 
 # Age group mapping: age_1 = 0-9, age_2 = 10-19, ..., age_8 = 70-79
 AGE_GROUP_MAP = {v: k for k, v in AGE_GROUPS.items()}
@@ -114,24 +157,6 @@ def get_prevalence_for_stratum(
     )
 
 
-def compute_log_ratio(degree: float, prevalence: float) -> Optional[float]:
-    """
-    Compute log-ratio: log10(degree / prevalence).
-
-    The paper uses log base 10, not natural log.
-
-    Args:
-        degree: Node degree
-        prevalence: Disease prevalence
-
-    Returns:
-        Log-ratio value (log10), or None if degree <= 0 or prevalence <= 0
-    """
-    if degree > 0 and prevalence > 0:
-        return np.log10(degree / prevalence)
-    return None
-
-
 def analyze_prevalence_degree_correlation(
     sex: str,
     age_group: str,
@@ -210,23 +235,6 @@ def analyze_prevalence_degree_correlation(
         df.loc[df["is_high_quintile"], "quintile_category"] = "high"
 
     return df
-
-
-def compute_z_score(values: pd.Series) -> pd.Series:
-    """
-    Compute Z-scores for a series of values.
-
-    Args:
-        values: Series of numeric values
-
-    Returns:
-        Series of Z-scores
-    """
-    mean = values.mean()
-    std = values.std()
-    if std == 0:
-        return pd.Series(0.0, index=values.index)
-    return (values - mean) / std
 
 
 def identify_high_risk_nodes(
@@ -384,12 +392,6 @@ def identify_high_risk_edges(
     - Uses product of z-scores: z(edge_betweenness) × z(mortality_difference)
     - Selects top percentile of edges by z-product
     - Requires minimum absolute mortality difference (default: 30%)
-
-    Note: The paper mentions bridges "peaking in older adults (female up to 89; male up to 68)",
-    but our implementation may yield different counts due to:
-    - Different data or thresholds
-    - Different selection criteria (percentile vs. threshold)
-    - Different minimum mortality difference requirements
 
     Args:
         sex: "Female" or "Male"
