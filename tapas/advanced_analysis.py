@@ -1,12 +1,11 @@
 """Advanced network analysis: prevalence-degree correlation and high-risk disease identification."""
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
-import networkx as nx
+from loguru import logger
 import numpy as np
 import pandas as pd
-from loguru import logger
 
 from tapas.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR
 from tapas.features import NetworkAnalyzer
@@ -118,7 +117,7 @@ def get_prevalence_for_stratum(
 def compute_log_ratio(degree: float, prevalence: float) -> Optional[float]:
     """
     Compute log-ratio: log10(degree / prevalence).
-    
+
     The paper uses log base 10, not natural log.
 
     Args:
@@ -160,7 +159,7 @@ def analyze_prevalence_degree_correlation(
         return pd.DataFrame()
 
     G = NetworkAnalyzer.load_adjacency_matrix(adj_path)
-    
+
     # Create analyzer instance to reuse calculations
     analyzer = NetworkAnalyzer(G)
     G_filtered = analyzer.get_filtered_graph(G)
@@ -238,13 +237,13 @@ def identify_high_risk_nodes(
 ) -> pd.DataFrame:
     """
     Identify high-risk nodes (high betweenness centrality and high mortality).
-    
+
     This implements the "high-mortality sinks" analysis from the paper:
     - Nodes with high betweenness centrality (central in network structure)
     - AND high in-hospital mortality rates
     - Uses product of z-scores: z(betweenness) × z(mortality)
     - Selects top 20% of nodes by z-product
-    
+
     Methodology (as per reference implementation and paper):
     1. Include ALL connected nodes: left-merge mortality (mortality=0 when missing), then
        compute z-scores on this full stratum so mean/std are over all diagnoses in the network
@@ -255,12 +254,12 @@ def identify_high_risk_nodes(
     5. Select top X% (default 20%) by z_product within each sex × age group:
        keep nodes with z_product >= (100 - X)th percentile of z_product among
        positive-positive nodes (percentile threshold, not fixed count)
-    
+
     The geometric mean is used for ranking/interpretability but not for selection.
     Selection is based on z_product, which penalizes diagnoses that are:
     - High mortality but peripheral (low betweenness)
     - Central but low mortality
-    
+
     These nodes are particularly harmful as they lie on many shortest paths
     (high betweenness) and have high mortality rates.
 
@@ -284,24 +283,24 @@ def identify_high_risk_nodes(
         return pd.DataFrame()
 
     G = NetworkAnalyzer.load_adjacency_matrix(adj_path)
-    
+
     # Create analyzer instance to reuse calculations
     analyzer = NetworkAnalyzer(G)
-    
+
     # Get node-to-ICD mapping
     node_mapping = get_node_icd_mapping(sex, age_num)
 
     # Compute betweenness centrality on FULL graph (normalized for individual node analysis)
     # Reuse NetworkAnalyzer method which calculates on full graph and caches results
     betweenness = analyzer.get_node_betweenness(G, normalized=True, use_cache=True)
-    
+
     # Filter to only connected nodes (nodes with at least one neighbor) for reporting
     G_filtered = analyzer.get_filtered_graph(G)
 
     # Filter to only connected nodes (nodes with at least one neighbor)
     # The paper states: "We filtered for nodes with at least one neighbor"
     filtered_nodes = set(G_filtered.nodes())
-    
+
     # Prepare betweenness data with ICD codes for connected nodes only
     # Script 2 calculates z-scores on all connected nodes in the sex-age group subset
     betweenness_df = pd.DataFrame(
@@ -348,9 +347,7 @@ def identify_high_risk_nodes(
 
     # Filter to nodes with BOTH z_betweenness > 0 AND z_mortality > 0
     # ("Only considering positive z-scores" = above average in both dimensions).
-    merged_positive = merged[
-        (merged["z_betweenness"] > 0) & (merged["z_mortality"] > 0)
-    ].copy()
+    merged_positive = merged[(merged["z_betweenness"] > 0) & (merged["z_mortality"] > 0)].copy()
 
     if len(merged_positive) == 0:
         logger.warning(f"No nodes with both positive z-scores for {sex} {age_group}")
@@ -380,14 +377,14 @@ def identify_high_risk_edges(
 ) -> pd.DataFrame:
     """
     Identify high-risk edges (high edge betweenness and high mortality difference).
-    
+
     This implements the "high-mortality bridges" analysis from the paper:
     - Edges with high edge betweenness centrality (central in network structure)
     - AND high difference in mortality between connected nodes
     - Uses product of z-scores: z(edge_betweenness) × z(mortality_difference)
     - Selects top percentile of edges by z-product
     - Requires minimum absolute mortality difference (default: 30%)
-    
+
     Note: The paper mentions bridges "peaking in older adults (female up to 89; male up to 68)",
     but our implementation may yield different counts due to:
     - Different data or thresholds
@@ -413,17 +410,17 @@ def identify_high_risk_edges(
         return pd.DataFrame()
 
     G = NetworkAnalyzer.load_adjacency_matrix(adj_path)
-    
+
     # Create analyzer instance to reuse calculations
     analyzer = NetworkAnalyzer(G)
-    
+
     # Get node-to-ICD mapping
     node_mapping = get_node_icd_mapping(sex, age_num)
 
     # Compute edge betweenness on FULL graph (normalized for individual edge analysis)
     # Reuse NetworkAnalyzer method which calculates on full graph and caches results
     edge_betweenness = analyzer.get_edge_betweenness(G, normalized=True, use_cache=True)
-    
+
     # Filter to only connected nodes for edge processing
     G_filtered = analyzer.get_filtered_graph(G)
 
@@ -446,7 +443,7 @@ def identify_high_risk_edges(
         # Only process edges where both nodes are in the filtered graph
         if u not in filtered_nodes or v not in filtered_nodes:
             continue
-            
+
         u_code = node_mapping.get(u, str(u))
         v_code = node_mapping.get(v, str(v))
 
@@ -507,9 +504,7 @@ def analyze_all_prevalence_degree(
         for age_group in AGE_GROUPS.values():
             logger.info(f"Analyzing prevalence-degree correlation: {sex} {age_group}...")
             try:
-                result = analyze_prevalence_degree_correlation(
-                    sex, age_group, prevalence_df, year
-                )
+                result = analyze_prevalence_degree_correlation(sex, age_group, prevalence_df, year)
                 if not result.empty:
                     result["sex"] = sex
                     result["age_group"] = age_group

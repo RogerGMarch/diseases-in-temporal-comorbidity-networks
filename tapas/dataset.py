@@ -1,11 +1,11 @@
-import re
-import zipfile
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+import re
+from urllib.parse import parse_qs, urlparse
+import zipfile
 
+from loguru import logger
 import pandas as pd
 import requests
-from loguru import logger
 from tqdm import tqdm
 import typer
 
@@ -35,7 +35,7 @@ def download_from_figshare(
     # Pattern: .../article_id?file=file_id
     parsed_url = urlparse(url)
     query_params = parse_qs(parsed_url.query)
-    
+
     if "file" not in query_params:
         # Try to extract from URL path if not in query params
         # Pattern: .../article_id/files/file_id
@@ -46,35 +46,38 @@ def download_from_figshare(
             raise ValueError(f"Could not extract file ID from URL: {url}")
     else:
         file_id = query_params["file"][0]
-    
+
     logger.info(f"Downloading file ID {file_id} from figshare...")
-    
+
     # Construct direct download URL
     download_url = f"https://ndownloader.figshare.com/files/{file_id}"
-    
+
     # Make request with stream=True to download in chunks
     response = requests.get(download_url, stream=True, timeout=30)
     response.raise_for_status()
-    
+
     # Get total file size from headers
     total_size = int(response.headers.get("content-length", 0))
-    
+
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Download with progress bar
-    with open(output_path, "wb") as f, tqdm(
-        desc=output_path.name,
-        total=total_size,
-        unit="B",
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as pbar:
+    with (
+        open(output_path, "wb") as f,
+        tqdm(
+            desc=output_path.name,
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as pbar,
+    ):
         for chunk in response.iter_content(chunk_size=chunk_size):
             if chunk:
                 f.write(chunk)
                 pbar.update(len(chunk))
-    
+
     logger.success(f"Downloaded {output_path.name} to {output_path.parent}")
 
 
@@ -85,7 +88,7 @@ def download(
 ) -> None:
     """
     Download the main dataset from figshare.
-    
+
     Args:
         url: Figshare URL for the dataset
         output_path: Path where the downloaded file should be saved
@@ -161,8 +164,10 @@ def process_dataset(
         logger.info("Processing prevalence data...")
         try:
             prevalence_df = pd.read_csv(prevalence_path)
-            logger.info(f"Loaded prevalence data: {len(prevalence_df)} rows, {len(prevalence_df.columns)} columns")
-            
+            logger.info(
+                f"Loaded prevalence data: {len(prevalence_df)} rows, {len(prevalence_df.columns)} columns"
+            )
+
             # Save processed prevalence data
             output_dir.mkdir(parents=True, exist_ok=True)
             prevalence_output = output_dir / "prevalence_data.csv"
@@ -176,24 +181,28 @@ def process_dataset(
     if adj_matrices_dir.exists():
         logger.info("Processing adjacency matrices...")
         adj_files = list(adj_matrices_dir.glob("*.csv"))
-        
+
         if adj_files:
             logger.info(f"Found {len(adj_files)} adjacency matrix files")
-            
+
             # Process a sample of adjacency matrices (you can modify this logic)
             processed_matrices = []
-            for adj_file in tqdm(adj_files[:5], desc="Processing matrices"):  # Process first 5 as example
+            for adj_file in tqdm(
+                adj_files[:5], desc="Processing matrices"
+            ):  # Process first 5 as example
                 try:
                     adj_df = pd.read_csv(adj_file)
                     # Store metadata about the matrix
-                    processed_matrices.append({
-                        "filename": adj_file.name,
-                        "shape": adj_df.shape,
-                        "file_path": str(adj_file.relative_to(data_dir)),
-                    })
+                    processed_matrices.append(
+                        {
+                            "filename": adj_file.name,
+                            "shape": adj_df.shape,
+                            "file_path": str(adj_file.relative_to(data_dir)),
+                        }
+                    )
                 except Exception as e:
                     logger.warning(f"Error processing {adj_file.name}: {e}")
-            
+
             # Save metadata about adjacency matrices
             if processed_matrices:
                 matrices_metadata = pd.DataFrame(processed_matrices)
@@ -207,7 +216,7 @@ def process_dataset(
     logger.info("Dataset structure:")
     logger.info(f"  - Prevalence data: {prevalence_path.exists()}")
     logger.info(f"  - Adjacency matrices: {adj_matrices_dir.exists()}")
-    
+
     contingency_dir = data_dir / "2.ContingencyTables"
     graphs_dir = data_dir / "4.Graphs-gexffiles"
     logger.info(f"  - Contingency tables: {contingency_dir.exists()}")
