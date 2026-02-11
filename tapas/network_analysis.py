@@ -108,7 +108,7 @@ def analyze_all_networks() -> pd.DataFrame:
 
 def create_table1_format(df: pd.DataFrame) -> pd.DataFrame:
     """Create a table in the format of Table 1 from the paper."""
-    metrics = ["Connected Nodes", "Degree", "Average Path", "Betweenness", "Closeness", "Modularity", "Clustering"]
+    metrics = ["Connected Nodes", "Degree", "Average Path", "Betweenness", "Closeness", "Modularity"]
     age_groups = ["0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79"]
 
     columns = ["Metric"]
