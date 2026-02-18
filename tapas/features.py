@@ -80,7 +80,7 @@ class NetworkAnalyzer:
         
         # Mortality files are in INTERIM_DATA_DIR/mortality
         mortality_path = INTERIM_DATA_DIR /"extracted" / "Data" / mort_filename
-        print("DEBUG: mortality diag: ",mortality_path)
+        #print("DEBUG: mortality diag: ",mortality_path)
         paths = {
             "adjacency": base_data_path / "3.AdjacencyMatrices" / adj_filename,
             "icd_codes": icd_codes_path,
@@ -208,7 +208,7 @@ class NetworkAnalyzer:
     @classmethod
     def load_edge_metrics(cls, sex: str, age_group_id: int, threshold: Optional[float] = None) -> pd.DataFrame:
         """
-        Loads graph, calculates edge metrics.
+        Loads graph, calculates edge metrics including Betweenness and Mortality difference.
         Supports thresholding for robustness analysis.
         """
         age_label = AGE_GROUPS[age_group_id]
@@ -248,7 +248,8 @@ class NetworkAnalyzer:
 
         # 3. Build DataFrame
         results = []
-        for u, v in graph_obj.edges():
+        # Iterate with data to access edge weights
+        for u, v, data in graph_obj.edges(data=True):
             bet = edge_betweenness.get((u, v))
             if bet is None:
                 bet = edge_betweenness.get((v, u), 0)
@@ -260,6 +261,8 @@ class NetworkAnalyzer:
             mort1 = mort_dict.get(icd1, 0)
             mort2 = mort_dict.get(icd2, 0)
             
+            weight = data.get('weight', 1.0)
+            
             results.append({
                 'Sex': sex,
                 'Age_Group': age_group_id,
@@ -268,6 +271,7 @@ class NetworkAnalyzer:
                 'ICD_Code_2': icd2,
                 'Description_1': descr_dict.get(u, ''),
                 'Description_2': descr_dict.get(v, ''),
+                'Weight': weight,
                 'Edge_Betweenness': bet,
                 'Mortality_1': mort1,
                 'Mortality_2': mort2,
