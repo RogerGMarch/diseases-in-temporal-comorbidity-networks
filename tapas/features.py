@@ -71,15 +71,16 @@ class NetworkAnalyzer:
 
         # File definitions
         adj_filename = f"Adj_Matrix_{sex}_ICD_age_{age_group_id}.csv"
-        mort_filename = f"mortality_diag_{sex.lower()}.csv"
-
+       
+        mort_filename = f"mortality_diag_{sex}.csv"
+        
         # ICD diagnosis files are in INTERIM_DATA_DIR, not in extracted/Data
         icd_codes_path = INTERIM_DATA_DIR / "ICD10_Diagnoses.csv"
         icd_eng_path = INTERIM_DATA_DIR / "DiagAll_Eng.csv"
         
         # Mortality files are in INTERIM_DATA_DIR/mortality
-        mortality_path = INTERIM_DATA_DIR / "mortality" / mort_filename
-
+        mortality_path = INTERIM_DATA_DIR /"extracted" / "Data" / mort_filename
+        print("DEBUG: mortality diag: ",mortality_path)
         paths = {
             "adjacency": base_data_path / "3.AdjacencyMatrices" / adj_filename,
             "icd_codes": icd_codes_path,
