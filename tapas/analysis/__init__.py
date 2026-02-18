@@ -9,13 +9,11 @@ This package contains specialized analysis modules:
 """
 
 from tapas.analysis.outliers import (
-    detect_outliers_exact,
-    select_top_outliers,
-    identify_high_mortality_sinks_zscore,
+    detect_outliers,
+    select_top_outliers
 )
 
 __all__ = [
-    "detect_outliers_exact",
-    "select_top_outliers",
-    "identify_high_mortality_sinks_zscore",
+    "detect_outliers",
+    "select_top_outliers"
 ]
