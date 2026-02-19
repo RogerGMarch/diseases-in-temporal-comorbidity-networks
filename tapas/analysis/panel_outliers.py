@@ -543,7 +543,6 @@ def _prepare_bridge_df(df_bridge: pd.DataFrame, df_sinks: pd.DataFrame) -> pd.Da
 def generate_bridge_bar_panel(df_bridge: pd.DataFrame, df_sinks: pd.DataFrame, output_name: str):
     """
     Bar chart of bridge edge counts by age group and sex.
-    Matches notebook 010 Cell 4.
     """
     logger.info(f"Generating Bridge Bar Panel: {output_name}...")
 

@@ -483,7 +483,8 @@ def plot_threshold_comparison(
         # Bar Plot
         x = range(len(summary_df))
         y = summary_df[metric]
-        bars = ax.bar(x, y, color=colors_list[idx], alpha=0.8, edgecolor='black')
+        # Added linewidth=1.5 here as well for consistency
+        bars = ax.bar(x, y, color=colors_list[idx], alpha=0.8, edgecolor='black', linewidth=1.5)
         
         ax.set_xticks(x)
         ax.set_xticklabels(['OR > 1.5\n(Baseline)', 'OR > 2.0\n(Strict)'])
@@ -504,7 +505,8 @@ def plot_threshold_comparison(
     names = ['Outliers', 'Sinks', 'Bridges']
     vals = [jaccard_scores[n] for n in names]
     
-    bars = plt.bar(range(3), vals, color=colors_list, alpha=0.8, edgecolor='black')
+    # Added linewidth=1.5 to make the border visible
+    bars = plt.bar(range(3), vals, color=colors_list, alpha=0.8, edgecolor='black', linewidth=1.5)
     
     plt.xticks(range(3), names)
     plt.ylabel('Jaccard Index', fontweight='bold')
