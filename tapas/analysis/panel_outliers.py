@@ -468,6 +468,354 @@ def generate_disease_age_heatmap(df_in: pd.DataFrame, output_name: str):
     plt.close(fig_leg3)
 
 
+
+# -------------------------------------------------------------------------
+# Bridge Edge Plots (from notebook 010)
+# -------------------------------------------------------------------------
+
+# Age labels used across all bridge plots
+_AGE_LABELS_FULL = ['0 - 9', '10 - 19', '20 - 29', '30 - 39', '40 - 49', '50 - 59', '60 - 69', '70 - 79']
+_MIN_AGE_NUM = 5  # Bridge edges only start from age group 5
+
+_HEX_COLORS = [
+    '#1AF239', '#58F21A', '#961D1A', '#B41AF2', '#FFC801', '#581AF2',
+    '#1AF295', '#1A95F2', '#F2761A', '#1A39F2', '#F21A1A', '#F21AD3',
+    '#B4F21A', '#1AF2F2',
+]
+_CHAPTER_COLOR_MAP = dict(zip(list('ABCDEFGHIJKLMN'), _HEX_COLORS))
+
+
+def _prepare_bridge_df(df_bridge: pd.DataFrame, df_sinks: pd.DataFrame) -> pd.DataFrame:
+    """
+    Shared preparation for all bridge plots:
+    - Normalises age column to age_num
+    - Filters to age groups >= _MIN_AGE_NUM
+    - Derives ICD chapter columns, Chapter_Pair, Lower_Mort_Chapter
+    - Builds chapter_colors from the sinks file (matching notebook 009 palette)
+    Returns (df_edges, chapter_colors, age_ticks).
+    """
+    col_map = {c.lower(): c for c in df_bridge.columns}
+    age_col = col_map.get('age_group') or 'Age_Group'
+
+    df = df_bridge.copy()
+    if df[age_col].dtype == object:
+        df['age_num'] = df[age_col].astype(str).str.replace('age_', '', regex=False).astype(int)
+    else:
+        df['age_num'] = df[age_col].astype(int)
+
+    df = df[df['age_num'] >= _MIN_AGE_NUM].copy()
+
+    # ICD chapter columns
+    df['ICD_Chapter_1'] = df['ICD_Code_1'].astype(str).str[0]
+    df['ICD_Chapter_2'] = df['ICD_Code_2'].astype(str).str[0]
+
+    def lower_mort_chapter(r):
+        m1 = r.get('Mortality_1')
+        m2 = r.get('Mortality_2')
+        if pd.isna(m1) and pd.isna(m2):
+            return str(r['ICD_Chapter_1'])
+        if pd.isna(m2) or (pd.notna(m1) and m1 <= m2):
+            return str(r['ICD_Chapter_1'])
+        return str(r['ICD_Chapter_2'])
+
+    df['Lower_Mort_Chapter'] = df.apply(lower_mort_chapter, axis=1)
+
+    df['Chapter_Pair'] = df.apply(
+        lambda r: '-'.join(sorted([str(r['ICD_Chapter_1']), str(r['ICD_Chapter_2'])])),
+        axis=1
+    )
+
+    # Chapter colors — derive unique chapters from sinks file to match 009 palette
+    if df_sinks is not None and 'ICD_Code' in df_sinks.columns:
+        outlier_chapters = df_sinks['ICD_Code'].astype(str).str[0]
+        unique_chapters = sorted(outlier_chapters.unique())
+    else:
+        unique_chapters = sorted(pd.unique(pd.concat([
+            df['ICD_Code_1'].astype(str).str[0],
+            df['ICD_Code_2'].astype(str).str[0]
+        ])))
+
+    chapter_colors = {ch: _CHAPTER_COLOR_MAP.get(ch, '#CCCCCC') for ch in unique_chapters}
+
+    return df, chapter_colors
+
+
+def generate_bridge_bar_panel(df_bridge: pd.DataFrame, df_sinks: pd.DataFrame, output_name: str):
+    """
+    Bar chart of bridge edge counts by age group and sex.
+    Matches notebook 010 Cell 4.
+    """
+    logger.info(f"Generating Bridge Bar Panel: {output_name}...")
+
+    col_map = {c.lower(): c for c in df_bridge.columns}
+    sex_col = col_map.get('sex') or col_map.get('gender') or 'Sex'
+
+    df_edges, chapter_colors = _prepare_bridge_df(df_bridge, df_sinks)[:2]
+
+    counts = (
+        df_edges.groupby([sex_col, 'age_num'])
+        .size()
+        .reset_index(name='count')
+    )
+
+    if counts.empty:
+        logger.warning(f"No data for {output_name}")
+        return
+
+    fig, ax = plt.subplots(figsize=(2.00, 1.16))
+
+    colors = {'Male': '#1FA3FF', 'Female': '#FF5A8A'}
+    for sex, sub in counts.groupby(sex_col):
+        color = colors.get(str(sex), '#CCCCCC')
+        offset = 0.15 if str(sex).lower().startswith('m') else -0.15
+        ax.bar(sub['age_num'] + offset, sub['count'], width=0.3, label=str(sex), color=color)
+
+    age_ticks = np.arange(_MIN_AGE_NUM, len(_AGE_LABELS_FULL) + 1)
+    age_labels = _AGE_LABELS_FULL[_MIN_AGE_NUM - 1:]
+    ax.set_xticks(age_ticks)
+    ax.set_xticklabels(age_labels, rotation=45, ha='right', fontsize=8)
+    ax.tick_params(axis='y', labelsize=8)
+    ax.set_xlabel('Age', fontsize=8)
+    ax.set_ylabel('n bridge edges', fontsize=8)
+
+    ax.set_xlim(age_ticks.min() - 0.5, age_ticks.max() + 0.5)
+    ax.set_ylim(0, counts['count'].max() + 2)
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_bounds(age_ticks.min(), age_ticks.max())
+    ax.spines['left'].set_bounds(0, counts['count'].max() + 2)
+
+    save_figure(fig, output_name)
+    plt.close(fig)
+
+
+def generate_bridge_alluvial(df_bridge: pd.DataFrame, df_sinks: pd.DataFrame, output_name: str):
+    """
+    Alluvial ribbon plot of bridge edges by age group, colored by lower-mortality ICD chapter pair.
+    Matches notebook 010 Cell 6.
+    """
+    logger.info(f"Generating Bridge Alluvial: {output_name}...")
+
+    df_edges, chapter_colors = _prepare_bridge_df(df_bridge, df_sinks)[:2]
+
+    pair_counts = (
+        df_edges.groupby(['age_num', 'Chapter_Pair'])
+        .size()
+        .reset_index(name='count')
+    )
+
+    ages  = sorted(df_edges['age_num'].unique())
+    pairs = sorted(pair_counts['Chapter_Pair'].unique())
+
+    pair_to_low_chapter = (
+        df_edges.groupby('Chapter_Pair')['Lower_Mort_Chapter']
+        .agg(lambda s: s.value_counts().idxmax())
+        .to_dict()
+    )
+    pair_colors = {p: chapter_colors.get(pair_to_low_chapter.get(p, ''), '#CCCCCC') for p in pairs}
+
+    wide = (pair_counts
+            .pivot(index='age_num', columns='Chapter_Pair', values='count')
+            .reindex(index=ages, columns=pairs)
+            .fillna(0.0))
+
+    group_spacing = 1.6
+    x = np.arange(len(ages)) * group_spacing
+    age_label_map = {a: _AGE_LABELS_FULL[a - 1] for a in ages}
+
+    gap       = 2.0
+    curviness = 0.55
+    alpha     = 0.90
+
+    y0 = {a: {} for a in ages}
+    y1 = {a: {} for a in ages}
+    column_heights = {}
+
+    for a in ages:
+        row = wide.loc[a].to_dict()
+        ordered = sorted(pairs, key=lambda p: row[p], reverse=True)
+        cum, nonzero = 0.0, 0
+        for p in ordered[::-1]:
+            h = float(row[p])
+            if h <= 0:
+                y0[a][p] = y1[a][p] = cum
+                continue
+            y0[a][p] = cum
+            y1[a][p] = cum + h
+            cum += h + gap
+            nonzero += 1
+        if nonzero > 0:
+            cum -= gap
+        column_heights[a] = cum
+
+    fig, ax = plt.subplots(figsize=(2.00, 2.20))
+
+    ribbons = []
+    for i in range(len(ages) - 1):
+        a0, a1 = ages[i], ages[i + 1]
+        x0, x1 = x[i], x[i + 1]
+        for p in pairs:
+            h0 = y1[a0][p] - y0[a0][p]
+            h1 = y1[a1][p] - y0[a1][p]
+            if max(h0, h1) <= 0:
+                continue
+            path = ribbon_path(
+                x0, y0[a0][p], y1[a0][p],
+                x1, y0[a1][p], y1[a1][p],
+                bend=curviness
+            )
+            ribbons.append((max(h0, h1), p, path))
+
+    ribbons.sort(key=lambda t: t[0])
+    for _, p, path in ribbons:
+        ax.add_patch(PathPatch(path, facecolor=pair_colors[p], edgecolor='none', alpha=alpha))
+
+    ax.set_xlim(x.min() - group_spacing * 0.6, x.max() + group_spacing * 0.6)
+    ax.set_ylim(0, 60)
+    ax.set_xticks(x)
+    ax.set_xticklabels([age_label_map[a] for a in ages], rotation=45, ha='right')
+    ax.set_xlabel('Age group')
+    ax.set_ylabel('n bridges')
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_bounds(x.min(), x.max())
+    ax.spines['left'].set_bounds(0, 60)
+
+    save_figure(fig, output_name)
+    plt.close(fig)
+
+    # Legend: chapter pairs
+    _generate_bridge_pair_legend(pairs, pair_colors)
+
+
+def generate_bridge_heatmap(df_bridge: pd.DataFrame, df_sinks: pd.DataFrame, output_name: str):
+    """
+    Heatmap of bridge edges (disease couples) by age group.
+    Rows = low-to-high mortality edge labels. Color = lower-mortality ICD chapter.
+    Uses pcolormesh for crisp vector PDF output.
+    Matches notebook 010 Cell 7.
+    """
+    logger.info(f"Generating Bridge Heatmap: {output_name}...")
+
+    def short_icd(icd):
+        if not icd or pd.isna(icd):
+            return 'NA'
+        return str(icd).split('.', 1)[0]
+
+    df_edges, chapter_colors = _prepare_bridge_df(df_bridge, df_sinks)[:2]
+
+    # Build low-to-high edge label
+    df_tmp = df_edges.copy()
+    df_tmp['icd1_short'] = df_tmp['ICD_Code_1'].map(short_icd)
+    df_tmp['icd2_short'] = df_tmp['ICD_Code_2'].map(short_icd)
+
+    def edge_label_low_high(r):
+        m1 = r.get('Mortality_1')
+        m2 = r.get('Mortality_2')
+        i1, i2 = str(r['icd1_short']), str(r['icd2_short'])
+        if pd.isna(m1) and pd.isna(m2):
+            return '-'.join(sorted([i1, i2]))
+        if pd.isna(m2) or (pd.notna(m1) and m1 <= m2):
+            return f"{i1}-{i2}"
+        return f"{i2}-{i1}"
+
+    df_tmp['Edge_Label'] = df_tmp.apply(edge_label_low_high, axis=1)
+
+    edge_to_low_chapter = (
+        df_tmp.drop_duplicates('Edge_Label')
+              .set_index('Edge_Label')['Lower_Mort_Chapter']
+              .to_dict()
+    )
+
+    # Presence/absence matrix
+    df_unique = df_tmp[['Edge_Label', 'age_num']].drop_duplicates()
+    heatmap_data = (
+        df_unique.assign(present=1)
+        .groupby(['Edge_Label', 'age_num'])['present']
+        .max()
+        .unstack(fill_value=0)
+    )
+
+    age_ticks = np.array(sorted(df_edges['age_num'].unique()))
+    heatmap_data = heatmap_data.reindex(columns=age_ticks, fill_value=0)
+
+    # Sort rows by first age of appearance
+    present       = heatmap_data.values > 0
+    first_age_idx = present.argmax(axis=1)
+    first_age_idx[~present.any(axis=1)] = heatmap_data.shape[1]
+    sorted_idx    = np.argsort(first_age_idx)
+    heatmap_data_sorted = heatmap_data.iloc[sorted_idx]
+
+    edge_labels        = heatmap_data_sorted.index.tolist()
+    n_edges, n_ages    = heatmap_data_sorted.shape
+
+    present   = heatmap_data_sorted.values > 0
+    color_idx = np.tile(np.arange(n_edges)[:, None], (1, n_ages))
+    masked_idx = np.ma.masked_where(~present, color_idx)
+
+    row_colors = [chapter_colors.get(edge_to_low_chapter.get(lbl, ''), '#CCCCCC') for lbl in edge_labels]
+    cmap = mcolors.ListedColormap(row_colors)
+    cmap.set_bad(color='white')
+
+    # Use pcolormesh for vector PDF (no blurring)
+    plot_data = masked_idx.astype(float)
+    plot_data[masked_idx.mask] = np.nan
+
+    fig_edge, ax_edge = plt.subplots(figsize=(2.08, 5.8))
+    ax_edge.pcolormesh(
+        plot_data,
+        cmap=cmap,
+        vmin=0,
+        vmax=n_edges - 1,
+        shading='flat',
+        linewidth=0,
+        antialiased=False,
+    )
+    ax_edge.invert_yaxis()
+
+    x_tick_labels = [_AGE_LABELS_FULL[a - 1] for a in age_ticks]
+    ax_edge.set_xticks(np.arange(n_ages) + 0.5)
+    ax_edge.set_xticklabels(x_tick_labels, rotation=45, ha='right', fontsize=8)
+    ax_edge.set_yticks(np.arange(n_edges) + 0.5)
+    ax_edge.set_yticklabels(edge_labels, fontsize=8)
+    ax_edge.set_xlabel('Age group', fontsize=8)
+    ax_edge.set_ylabel('Disease couples', fontsize=8)
+
+    ax_edge.spines['top'].set_visible(False)
+    ax_edge.spines['right'].set_visible(False)
+
+    save_figure(fig_edge, output_name)
+    plt.close(fig_edge)
+
+
+def _generate_bridge_pair_legend(pairs, pair_colors):
+    """
+    Legend-only figure for bridge chapter pairs (two half-columns).
+    Matches notebook 010 Cell 8.
+    """
+    fig, ax = plt.subplots(figsize=(2.8, 1.76))
+    ax.axis('off')
+
+    legend_handles = [plt.Line2D([0], [0], color=pair_colors[p], lw=6) for p in pairs]
+    legend_labels  = list(pairs)
+
+    mid = (len(legend_handles) + 1) // 2
+    h1, l1 = legend_handles[:mid], legend_labels[:mid]
+    h2, l2 = legend_handles[mid:], legend_labels[mid:]
+
+    leg1 = ax.legend(h1, l1, title='Chapter Pair', frameon=False,
+                     loc='center left', bbox_to_anchor=(0.0, 0.5))
+    ax.add_artist(leg1)
+    ax.legend(h2, l2, title='Chapter Pair', frameon=False,
+              loc='center left', bbox_to_anchor=(0.5, 0.5))
+
+    fig.tight_layout()
+    save_figure(fig, 'legend_bridge_edges_heatmap_chapter_pair')
+    plt.close(fig)
+
+
 @app.command()
 def main():
     logger.info("Generating Panel Plots...")
@@ -515,14 +863,25 @@ def main():
     else:
         logger.warning("Missing Outliers data file. Run 'tapas outliers' first.")
 
-    # --- Plot 3: Bridge Edges ---
+    # --- Plot 3 + Bridge plots (from notebook 010) ---
     bridge_path = PROCESSED_DATA_DIR / 'bridge_edges_mortality_ZSCORE.csv'
     if bridge_path.exists():
         logger.info("Plotting Bridge Edges...")
         df_bridge = pd.read_csv(bridge_path)
-        generate_bar_panel(df_bridge, 'panel_bridge_edges_by_age_sex', 'n bridge edges')
+
+        # df_sinks used to derive chapter_colors consistent with 009 palette
+        _df_sinks = pd.read_csv(sinks_path) if sinks_path.exists() else None
+
+        # Bar chart: bridge edges by age & sex
+        generate_bridge_bar_panel(df_bridge, _df_sinks, 'panel_bridge_edges_by_age_sex')
+
+        # Alluvial: bridge edges by age, colored by chapter pair
+        generate_bridge_alluvial(df_bridge, _df_sinks, 'panel_bridge_edges_alluvial_by_age_chapter_pair')
+
+        # Heatmap: disease couples by age (vector PDF via pcolormesh)
+        generate_bridge_heatmap(df_bridge, _df_sinks, 'panel_bridge_edges_by_age_heatmap_short_icd_edges')
     else:
-        logger.warning(f"Missing {bridge_path}. Skipping Bridge Edges plot.")
+        logger.warning(f"Missing {bridge_path}. Skipping Bridge Edges plots.")
 
 
 if __name__ == "__main__":
