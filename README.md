@@ -1,243 +1,128 @@
 # Diseases in Temporal Comorbidity Networks
 
-A research project for analyzing diseases in temporal comorbidity networks using population-wide health data.
+Comorbidity networks, which capture disease-disease co-occurrence usually based on electronic health records, reveal structured patterns in how diseases cluster and progress across individuals. However, how these networks evolve across different age groups and how this evolution relates to properties like disease prevalence and mortality remains understudied. To address these issues, we used publicly available comorbidity networks extracted from a comprehensive dataset of 45 million Austrian hospital stays from 1997 to 2014, covering 8.9 million patients. These networks grow and become denser with age. We identified groups of diseases that exhibit similar patterns of structural centrality throughout the lifespan, revealing three dominant age-related components with peaks in early childhood, midlife, and late life. To uncover the drivers of this structural change, we examined the relationship between prevalence and degree. This allowed us to identify conditions that were disproportionately connected to other diseases. Using betweenness centrality in combination with mortality data, we further identified high-mortality bridging diseases. Several diseases show high connectivity relative to their prevalence, such as iron deficiency anemia (D50) in children, nicotine dependence (F17), and lipoprotein metabolism disorders (E78) in adults. We also highlight structurally central diseases with high mortality that emerge at different life stages, including cancers (C group), liver cirrhosis (K74), subarachnoid hemorrhage (I60), and chronic kidney disease (N18). These findings underscore the importance of targeting age-specific, network-central conditions with high mortality for prevention and integrated care.
 
-## Overview
-
-This project processes comorbidity network data from a large-scale health dataset (8.9M hospital patients, 1997-2014) to analyze disease relationships and temporal patterns.
-
-## Prerequisites
-
-- Python 3.10
-- [uv](https://github.com/astral-sh/uv) - Fast Python package installer and resolver
-
-## Setup
-
-### 1. Install uv (if not already installed)
+## Quick Start
 
 ```bash
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Or using pip
-pip install uv
-```
-
-### 2. Create virtual environment and install dependencies
-
-```bash
-# Create virtual environment
+# 1. Setup environment
 make create_environment
-
-# Activate virtual environment
-# macOS/Linux:
 source .venv/bin/activate
-# Windows:
-# .\.venv\Scripts\activate
 
-# Install dependencies
-uv sync
-```
-
-Or simply run:
-
-```bash
+# 2. Install dependencies
 make requirements
+
+# 3. Run pipeline (downloads data, runs all analyses)
+python pipeline.py
 ```
 
-This will:
-- Create a virtual environment (if it doesn't exist)
-- Install all project dependencies from `pyproject.toml`
+That's it! The pipeline generates all tables and results from the paper.
 
-## Project Structure
+## Pipeline Steps
 
-```text
+```mermaid
+graph LR
+    Download[1_Download_Data] --> Process[2_Process_Data]
+    Process --> Network[3_Network_Analysis]
+    Network --> Advanced[4_Advanced_Analysis]
+    Advanced --> Plots[5_Generate_Plots]
+    Plots --> Complete[Complete]
+```
+
+**What happens:**
+1. **Download** - Fetches dataset from Figshare (~GB, skips if already downloaded)
+2. **Process** - Extracts and structures the data
+3. **Network Analysis** - Computes network metrics → **Table 1**
+4. **Advanced Analysis** - Identifies critical diseases → **Table 2**  
+5. **Generate Plots** - Creates visualizations automatically
+
+**Time:** 20-60 minutes depending on download speed
+
+## Results Generated
+
+After running `python pipeline.py`, you'll have:
+
+**Tables (CSV files in `data/processed/`):**
+
+| File | Description |
+|------|-------------|
+| `network_properties_table1_format.csv` | **Table 1** - Network properties |
+| `table2_critical_diseases.csv` | **Table 2** - Critical disease counts |
+| `outliers_data_S1.csv` | **Supplementary Table S1** - Degree outliers |
+| `high_risk_nodes.csv` | High-mortality sinks |
+| `high_risk_edges.csv` | Critical bridge edges |
+| `prevalence_degree_analysis.csv` | Full prevalence-degree data |
+
+**Plots (PNG files in `reports/figures/`):**
+
+| File | Description |
+|------|-------------|
+| `mortality_difference_histograms.png` | Mortality distribution analysis |
+| `zscore_distributions.png` | Z-score validation plots |
+
+All results are generated automatically in a single run.
+
+## File Structure
+
+```
 .
-├── data/                    # Data directory (created after download)
-│   ├── raw/                 # Raw downloaded data
-│   ├── interim/             # Intermediate processing files
-│   ├── processed/           # Final processed datasets
-│   └── external/            # External data sources
-├── models/                  # Trained models
-├── notebooks/               # Jupyter notebooks for analysis
-├── reports/                 # Generated reports and figures
-│   └── figures/            # Visualization outputs
-├── tapas/                   # Main package
-│   ├── config.py           # Configuration and paths
-│   ├── dataset.py          # Data download and processing
-│   ├── features.py         # Feature engineering
-│   ├── plots.py            # Plotting utilities
-│   └── modeling/           # Model training and prediction
-│       ├── train.py        # Training scripts
-│       └── predict.py      # Prediction scripts
-├── pipeline.py             # Main pipeline script
-├── pyproject.toml          # Project dependencies
-└── Makefile                # Make commands for common tasks
+├── data/                    # Generated by pipeline
+├── docs/                    # Documentation
+│   ├── WORKFLOW.md          # Detailed workflow
+│   ├── DATA_DICTIONARY.md   # Variable definitions
+│   └── METHODOLOGY.md       # Statistical methods
+├── reports/figures/         # Generated plots
+├── tapas/                   # Analysis pipeline
+├── pipeline.py              # Main analysis script
+└── README.md
 ```
 
-## Usage
+## Configuration
 
-### Download and Process Data
+To modify analysis parameters (percentiles, thresholds), edit:
+- `tapas/analysis_config.py` - All parameters in one place with documentation
 
-The easiest way to download and process the dataset:
+## Documentation
 
-```bash
-# Using the pipeline script
-python pipeline.py run
+- **[docs/WORKFLOW.md](docs/WORKFLOW.md)** - Detailed workflow and troubleshooting
+- **[docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md)** - All variables explained
+- **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)** - Statistical methods and justification
 
-# Or using make
-make data
-```
+## Requirements
 
-This will:
+- Python 3.10.13 (specified in `.python-version`)
+- All dependencies pinned in `pyproject.toml` for reproducibility
 
-1. Download the dataset from Figshare (~GB file)
-2. Extract the zip file
-3. Process prevalence data and adjacency matrices
-4. Save processed data to `data/processed/`
-
-#### Pipeline Options
+## Common Commands
 
 ```bash
-# Skip download (if file already exists)
-python pipeline.py run --skip-download
-
-# Custom download path
-python pipeline.py run --download-path data/raw/my_data.zip
-
-# Custom extraction directory
-python pipeline.py run --extract-to data/interim/custom_extract
-
-# Custom output directory
-python pipeline.py run --output-dir data/processed/custom_output
-```
-
-### Individual Steps
-
-You can also run individual steps:
-
-```bash
-# Download only
-python -m tapas.dataset download
-
-# Process only (requires downloaded file)
-python -m tapas.dataset main
-```
-
-### Training Models
-
-```bash
-python -m tapas.modeling.train
-```
-
-### Making Predictions
-
-```bash
-python -m tapas.modeling.predict
-```
-
-## Development
-
-### Code Formatting and Linting
-
-```bash
-# Check formatting and linting
-make lint
-
-# Auto-fix formatting and linting issues
-make format
-```
-
-### Clean Up
-
-```bash
-# Remove compiled Python files
-make clean
+make help              # Show all available commands
+make requirements      # Install dependencies
+make clean             # Remove generated files
 ```
 
 ## Data Source
 
-The dataset is downloaded from:
+Dataset from Figshare: [Comorbidity Networks From Population-Wide Health Data](https://figshare.com/articles/dataset/Comorbidity_Networks_From_Population-Wide_Health_Data_Aggregated_Data_of_8_9M_Hospital_Patients_1997-2014_/27102553)
 
-- **Figshare**: [Comorbidity Networks From Population-Wide Health Data](https://figshare.com/articles/dataset/Comorbidity_Networks_From_Population-Wide_Health_Data_Aggregated_Data_of_8_9M_Hospital_Patients_1997-2014_/27102553)
-
-The dataset includes:
-- Prevalence data (Sex, Age, Year, ICD codes)
-- Contingency tables
-- Adjacency matrices
-- Graph files (GEXF format)
-
-## Configuration
-
-Project paths are configured in `tapas/config.py`. The configuration automatically:
-- Detects the project root directory
-- Creates necessary data directories
-- Sets up paths for raw, interim, processed, and external data
-
-## Dependencies
-
-Main dependencies (see `pyproject.toml` for full list):
-- `pandas` - Data manipulation
-- `loguru` - Logging
-- `typer` - CLI framework
-- `requests` - HTTP requests for downloads
-- `tqdm` - Progress bars
-- `ruff` - Code formatting and linting
+- Population: 8.9M Austrian hospital patients
+- Period: 1997-2014
+- Networks: 16 comorbidity networks (2 sexes × 8 age groups)
 
 ## Troubleshooting
 
-### Download Issues
+**Download fails:** File will be skipped if it already exists. Delete `data/raw/comorbidity_networks_data.zip` to force re-download.
 
-If the download fails:
+**Environment issues:** Ensure the virtual environment is activated before running the pipeline.
 
-1. Check your internet connection
-2. Verify the Figshare URL is accessible
-3. Try downloading manually and placing the file in `data/raw/comorbidity_networks_data.zip`
+**Missing results:** Verify that the download step completed successfully. Check that data files exist in `data/interim/extracted/Data/`
 
-### Path Issues
-
-If you encounter path-related errors:
-
-- Ensure you're running commands from the project root directory
-- Check that `tapas/config.py` correctly identifies the project root
-- Verify all data directories are created (they should be created automatically)
-
-### Virtual Environment
-
-If you have issues with the virtual environment:
-
-```bash
-# Remove existing environment
-rm -rf .venv
-
-# Recreate and install
-make create_environment
-source .venv/bin/activate  # or .\.venv\Scripts\activate on Windows
-uv sync
-```
-
-## Make Commands
-
-Run `make help` to see all available commands:
-
-```bash
-make help
-```
-
-Common commands:
-
-- `make requirements` - Install dependencies
-- `make data` - Download and process data
-- `make lint` - Check code quality
-- `make format` - Format code
-- `make clean` - Clean compiled files
-- `make create_environment` - Create virtual environment
-
-## License
-
-[Add your license information here]
+**For detailed help:** See [docs/WORKFLOW.md](docs/WORKFLOW.md)
 
 ## Citation
 
-If you use this code or dataset, please cite the original data source:
-[Add citation information here]
+Yuri Gardinazzi, Roger Gonzaléz March, Suprabhath Kalahasti, Andrea Montaño Ramirez, Matteo Neri, Cicely Nguyen, Giovanni Palermo, Erik Weis, Katharina Ledebur, Elma Dervić. **"Characterization Of Diseases In Temporal Comorbidity Networks"**. arXiv:2506.22136 (physics). 2025. [https://arxiv.org/abs/2506.22136](https://arxiv.org/abs/2506.22136)
+
+## License
+
+MIT License
