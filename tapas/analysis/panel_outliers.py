@@ -947,42 +947,41 @@ def generate_outlier_scatter_panel(
         chapters   = sub["icd_chapter"].values
         categories = sub["quintile_category"].values
 
-        # Determine curated outlier membership for this age group
-        age_id = age_label_to_id.get(age_label)
-        if _exact_keys and age_id is not None:
-            curated_mask = sub["icd_code"].apply(
-                lambda c: (sex, age_id, c) in _exact_keys
-            ).values
-        else:
-            # Fallback: use raw quintile boundaries
-            curated_mask = categories != "middle"
-
-        is_outlier = curated_mask
+        # Outlier membership: all nodes at/beyond the 20th/80th pct boundary
+        is_outlier = categories != "middle"   # ~40% per group — matches reference
         is_normal  = ~is_outlier
 
-        # Non-outliers (all non-curated nodes): small, faded
+        # All nodes coloured by ICD chapter; non-outliers small & semi-transparent
         for ch in sorted(set(chapters)):
             ch_color = _CHAPTER_COLOR_MAP.get(ch, "#CCCCCC")
             mask = is_normal & (chapters == ch)
             if mask.any():
                 ax_scatter.scatter(prevalence[mask], degree[mask],
-                                   s=8, c=ch_color, alpha=0.20,
+                                   s=8, c=ch_color, alpha=0.55,
                                    edgecolors="none", zorder=1, rasterized=True)
 
-        # Curated outliers: solid, no border, fully opaque
+        # Outliers: larger, fully opaque, dark circle edge (matches reference)
         for ch in sorted(set(chapters)):
             ch_color = _CHAPTER_COLOR_MAP.get(ch, "#CCCCCC")
             mask = is_outlier & (chapters == ch)
             if mask.any():
                 ax_scatter.scatter(prevalence[mask], degree[mask],
-                                   s=20, c=ch_color, alpha=0.90,
-                                   edgecolors="none", zorder=3)
+                                   s=22, c=ch_color, alpha=1.0,
+                                   edgecolors="#333333", linewidths=0.3, zorder=3)
 
-        # ICD labels: top 5 curated outliers by |log_ratio deviation from group median|
-        if is_outlier.any():
-            outlier_sub = sub[is_outlier].copy()
-            outlier_sub["_abs_dev"] = (outlier_sub["log_ratio"] - sub["log_ratio"].median()).abs()
-            label_sub = outlier_sub.nlargest(5, "_abs_dev")
+        # ICD labels: top 5 from the curated Outliers_EXACT set by |log_ratio deviation|
+        age_id = age_label_to_id.get(age_label)
+        if _exact_keys and age_id is not None:
+            curated_mask = sub["icd_code"].apply(
+                lambda c: (sex, age_id, c) in _exact_keys
+            )
+            label_pool = sub[curated_mask].copy()
+        else:
+            label_pool = sub[is_outlier].copy()
+
+        if not label_pool.empty:
+            label_pool["_abs_dev"] = (label_pool["log_ratio"] - sub["log_ratio"].median()).abs()
+            label_sub = label_pool.nlargest(5, "_abs_dev")
         else:
             label_sub = pd.DataFrame()
 
