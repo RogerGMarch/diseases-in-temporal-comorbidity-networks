@@ -891,18 +891,6 @@ def generate_outlier_scatter_panel(
 
     df["icd_chapter"] = df["icd_code"].astype(str).str[0]
     age_groups_ordered = [AGE_GROUPS[k] for k in sorted(AGE_GROUPS.keys())]
-    age_label_to_id = {v: k for k, v in AGE_GROUPS.items()}
-
-    # Load curated top-N outliers from Outliers_EXACT.csv for labelling
-    exact_path = PROCESSED_DATA_DIR / "Outliers_EXACT.csv"
-    _exact_keys: set = set()
-    if exact_path.exists():
-        _exact_df = pd.read_csv(exact_path)
-        _exact_df = _exact_df[_exact_df["Sex"] == sex]
-        _exact_keys = set(zip(_exact_df["Sex"], _exact_df["Age_Group"], _exact_df["ICD_Code"]))
-        logger.debug(f"Loaded {len(_exact_keys)} curated outlier labels from {exact_path.name}")
-    else:
-        logger.warning(f"Outliers_EXACT.csv not found; falling back to top-{n_labels} by |log_ratio| deviation.")
 
     if output_name is None:
         output_name = "figure2_outlier_scatter_female" if sex == "Female" else "figS2_outlier_scatter_male"
@@ -947,11 +935,10 @@ def generate_outlier_scatter_panel(
         chapters   = sub["icd_chapter"].values
         categories = sub["quintile_category"].values
 
-        # Outlier membership: all nodes at/beyond the 20th/80th pct boundary
-        is_outlier = categories != "middle"   # ~40% per group — matches reference
+        is_outlier = categories != "middle"   # ~40% per group — 20th/80th pct boundary
         is_normal  = ~is_outlier
 
-        # All nodes coloured by ICD chapter; non-outliers small & semi-transparent
+        # Non-outliers: small, semi-transparent
         for ch in sorted(set(chapters)):
             ch_color = _CHAPTER_COLOR_MAP.get(ch, "#CCCCCC")
             mask = is_normal & (chapters == ch)
@@ -960,7 +947,7 @@ def generate_outlier_scatter_panel(
                                    s=8, c=ch_color, alpha=0.55,
                                    edgecolors="none", zorder=1, rasterized=True)
 
-        # Outliers: larger, fully opaque, dark circle edge (matches reference)
+        # Outliers: larger, fully opaque, dark circle edge
         for ch in sorted(set(chapters)):
             ch_color = _CHAPTER_COLOR_MAP.get(ch, "#CCCCCC")
             mask = is_outlier & (chapters == ch)
@@ -969,19 +956,11 @@ def generate_outlier_scatter_panel(
                                    s=22, c=ch_color, alpha=1.0,
                                    edgecolors="#333333", linewidths=0.3, zorder=3)
 
-        # ICD labels: top 5 from the curated Outliers_EXACT set by |log_ratio deviation|
-        age_id = age_label_to_id.get(age_label)
-        if _exact_keys and age_id is not None:
-            curated_mask = sub["icd_code"].apply(
-                lambda c: (sex, age_id, c) in _exact_keys
-            )
-            label_pool = sub[curated_mask].copy()
-        else:
-            label_pool = sub[is_outlier].copy()
-
-        if not label_pool.empty:
-            label_pool["_abs_dev"] = (label_pool["log_ratio"] - sub["log_ratio"].median()).abs()
-            label_sub = label_pool.nlargest(5, "_abs_dev")
+        # Labels: top 5 outliers by |log_ratio deviation from group median|
+        if is_outlier.any():
+            outlier_sub = sub[is_outlier].copy()
+            outlier_sub["_abs_dev"] = (outlier_sub["log_ratio"] - sub["log_ratio"].median()).abs()
+            label_sub = outlier_sub.nlargest(5, "_abs_dev")
         else:
             label_sub = pd.DataFrame()
 
