@@ -822,21 +822,15 @@ def _generate_bridge_pair_legend(pairs, pair_colors):
 # Figure 2 / Fig. S2: Outlier Scatter Panels (Degree vs Prevalence)
 # -------------------------------------------------------------------------
 
-def _load_prevalence_degree_data() -> pd.DataFrame:
+def _load_prevalence_degree_data(lower_q: float = 0.05, upper_q: float = 0.95) -> pd.DataFrame:
     """
-    Load the precomputed prevalence-degree analysis CSV.
+    Load the precomputed prevalence-degree analysis CSV and recompute
+    ``quintile_category`` using the requested percentile thresholds
+    (default 5th / 95th, ~10 % of nodes highlighted per group).
 
-    ``quintile_category`` reflects every node at/beyond the 20th/80th
-    percentile boundary (~40 % of each group).  This is the correct visual
-    definition for the scatter: all outer-quintile nodes are highlighted.
-    Labels are placed only on the curated top-N subset (see
-    ``generate_outlier_scatter_panel``).
-
-    Expected columns:
-        icd_code, degree, prevalence, log_ratio,
-        log_ratio_20th_percentile, log_ratio_80th_percentile,
-        is_low_quintile, is_high_quintile, quintile_category,
-        sex, age_group
+    The pre-baked columns ``log_ratio_20th_percentile`` /
+    ``log_ratio_80th_percentile`` are replaced with fresh per-group values
+    so the histogram dashed lines stay consistent with the colouring.
     """
     csv_path = PROCESSED_DATA_DIR / "prevalence_degree_analysis.csv"
     if not csv_path.exists():
@@ -844,7 +838,24 @@ def _load_prevalence_degree_data() -> pd.DataFrame:
             f"Missing {csv_path}. Run the prevalence-degree analysis first "
             "(python pipeline.py)."
         )
-    return pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path)
+
+    # Recompute thresholds and category per sex/age group
+    rows = []
+    for (sex, ag), grp in df.groupby(["sex", "age_group"], sort=False):
+        grp = grp.copy()
+        p_low  = grp["log_ratio"].quantile(lower_q)
+        p_high = grp["log_ratio"].quantile(upper_q)
+        grp["log_ratio_20th_percentile"] = p_low   # reuse column name for histogram
+        grp["log_ratio_80th_percentile"] = p_high
+        grp["is_low_quintile"]  = grp["log_ratio"] <= p_low
+        grp["is_high_quintile"] = grp["log_ratio"] >= p_high
+        grp["quintile_category"] = "middle"
+        grp.loc[grp["is_low_quintile"],  "quintile_category"] = "low"
+        grp.loc[grp["is_high_quintile"], "quintile_category"] = "high"
+        rows.append(grp)
+
+    return pd.concat(rows, ignore_index=True)
 
 
 def generate_outlier_scatter_panel(
