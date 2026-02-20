@@ -21,14 +21,18 @@ from tapas.config import (
     PROCESSED_DATA_DIR,
     RAW_DATA_DIR,
 )
-from tapas.dataset import download_from_figshare, process_dataset
-from tapas.network_analysis import analyze_all_networks, create_table1_format
-from tapas.advanced_analysis import (
-    analyze_all_prevalence_degree,
-    analyze_all_high_risk_nodes,
-    analyze_all_high_risk_edges,
-    load_mortality_data,
+from tapas.config import (
+    AGE_GROUPS,
+    INTERIM_DATA_DIR,
+    PROCESSED_DATA_DIR,
+    RAW_DATA_DIR,
+    SEXES,
 )
+from tapas.dataset import download_from_figshare, process_dataset
+from tapas.features import NetworkAnalyzer
+from tapas.analysis.outliers import get_all_outliers_exact
+from tapas.analysis.mortality import main as run_mortality_analysis
+from tapas.analysis.bridges import main as run_bridges_analysis
 from tapas.visualization import generate_all_plots
 
 
@@ -69,64 +73,62 @@ def main() -> None:
         logger.error(f"Processing failed: {e}")
         raise
 
-    # Step 3: Network analysis
-    logger.info("\n[Step 3/4] Analyzing network properties...")
+    # Step 3: Network analysis (properties table)
+    logger.info("\n[Step 3/5] Analyzing network properties...")
     try:
-        df = analyze_all_networks()
-        if df.empty:
-            logger.warning("No network data was analyzed. Check file paths.")
-        else:
-            # Save detailed results
+        import pandas as pd
+        rows = []
+        for sex in SEXES:
+            for age_id, age_range in AGE_GROUPS.items():
+                paths = NetworkAnalyzer._resolve_paths(sex, age_id)
+                adj_path = paths["adjacency"]
+                if not adj_path.exists():
+                    continue
+                try:
+                    G = NetworkAnalyzer.load_adjacency_matrix(adj_path)
+                    analyzer = NetworkAnalyzer(G)
+                    props = analyzer.calculate_all_properties(G)
+                    props.update({"Sex": sex, "Age_Group": age_id, "Age_Range": age_range})
+                    rows.append(props)
+                except Exception as e:
+                    logger.warning(f"Skipping {sex} age {age_id}: {e}")
+
+        if rows:
+            df_props = pd.DataFrame(rows)
             output_path = output_dir / "network_properties_table.csv"
             output_dir.mkdir(parents=True, exist_ok=True)
-            df.to_csv(output_path, index=False)
+            df_props.to_csv(output_path, index=False)
             logger.success(f"Saved network properties table to {output_path}")
-
-            # Create and save Table 1 format
-            table1_df = create_table1_format(df)
-            table1_path = output_dir / "network_properties_table1_format.csv"
-            table1_df.to_csv(table1_path, index=False)
-            logger.success(f"Saved Table 1 format to {table1_path}")
-            logger.success("Network analysis complete!")
+        else:
+            logger.warning("No network data was analyzed. Check file paths.")
+        logger.success("Network analysis complete!")
     except Exception as e:
         logger.error(f"Network analysis failed: {e}")
         raise
 
-    # Step 4: Advanced analysis
-    logger.info("\n[Step 4/4] Running advanced analyses...")
+    # Step 4: Advanced analyses
+    logger.info("\n[Step 4/5] Running advanced analyses...")
     try:
-        # Prevalence-Degree Correlation Analysis
-        logger.info("Analyzing prevalence-degree correlation...")
-        prevalence_degree_df = analyze_all_prevalence_degree()
-        if not prevalence_degree_df.empty:
-            output_path = output_dir / "prevalence_degree_analysis.csv"
-            prevalence_degree_df.to_csv(output_path, index=False)
-            logger.success(f"Saved prevalence-degree analysis to {output_path}")
+        # 4a. Outlier / prevalence-degree analysis
+        logger.info("Detecting degree-prevalence outliers...")
+        df_outliers = get_all_outliers_exact()
+        if not df_outliers.empty:
+            df_outliers.to_csv(output_dir / "Outliers_EXACT.csv", index=False)
+            logger.success("Saved Outliers_EXACT.csv")
 
-        # High-Risk Analysis (requires mortality data)
+        # 4b. High-mortality sinks
+        logger.info("Identifying high-mortality sinks...")
         try:
-            logger.info("Identifying high-risk nodes and edges...")
-            mortality_df = load_mortality_data()
-
-            high_risk_nodes = analyze_all_high_risk_nodes(mortality_df, top_percentile=0.20)
-            if not high_risk_nodes.empty:
-                output_path = output_dir / "high_risk_nodes.csv"
-                high_risk_nodes.to_csv(output_path, index=False)
-                logger.success(f"Saved high-risk nodes to {output_path}")
-
-            high_risk_edges = analyze_all_high_risk_edges(
-                mortality_df, top_percentile=0.05, min_mortality_diff=0.30
-            )
-            if not high_risk_edges.empty:
-                output_path = output_dir / "high_risk_edges.csv"
-                high_risk_edges.to_csv(output_path, index=False)
-                logger.success(f"Saved high-risk edges to {output_path}")
-        except FileNotFoundError as e:
-            logger.warning(f"Mortality data not found: {e}")
-            logger.info("Skipping high-risk analysis. Provide mortality data to enable this analysis.")
+            run_mortality_analysis()
         except Exception as e:
-            logger.warning(f"High-risk analysis failed: {e}")
-            logger.info("Continuing with pipeline completion...")
+            logger.warning(f"Mortality analysis failed: {e}")
+
+        # 4c. Bridge edges
+        logger.info("Identifying bridge edges...")
+        try:
+            run_bridges_analysis()
+        except Exception as e:
+            logger.warning(f"Bridge analysis failed: {e}")
 
         logger.success("Advanced analysis complete!")
     except Exception as e:

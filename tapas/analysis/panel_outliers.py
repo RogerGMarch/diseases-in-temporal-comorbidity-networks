@@ -7,6 +7,7 @@ Generates panel figures comparing counts by Age and Sex:
 3. Bridge Edges - Bar chart.
 4. Mortality Sinks Alluvial Flow - Ribbon plot showing ICD Chapter distribution across ages.
 5. Disease by Age Heatmap - Heatmap of high-degree outliers colored by ICD Chapter.
+6. Outlier Scatter Panels - Degree vs Prevalence scatter plots per age group (Figure 2 / Fig. S2).
 
 All plots share specific visual styles (pastel colors, dimensions, spine adjustments).
 """
@@ -15,21 +16,23 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib.gridspec as gridspec
 import seaborn as sns
 from matplotlib.path import Path as MplPath
 from matplotlib.patches import PathPatch
 from matplotlib.lines import Line2D
+from matplotlib.ticker import LogLocator, NullFormatter
 import typer
 from loguru import logger
 from pathlib import Path
 from typing import Optional, List, Dict
 
-from tapas.config import PROCESSED_DATA_DIR, FIGURES_DIR, DATA_DIR
+from tapas.config import PROCESSED_DATA_DIR, FIGURES_DIR, DATA_DIR, AGE_GROUPS, SEXES
 
 app = typer.Typer()
 
 # Set style parameters globally
-plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.family'] = 'Ubuntu'
 plt.rcParams.update({
     'font.size': 8,
     'axes.titlesize': 8,
@@ -815,6 +818,205 @@ def _generate_bridge_pair_legend(pairs, pair_colors):
     plt.close(fig)
 
 
+# -------------------------------------------------------------------------
+# Figure 2 / Fig. S2: Outlier Scatter Panels (Degree vs Prevalence)
+# -------------------------------------------------------------------------
+
+def _load_prevalence_degree_data() -> pd.DataFrame:
+    """
+    Load the precomputed prevalence-degree analysis CSV.
+
+    Expected columns:
+        icd_code, degree, prevalence, log_ratio,
+        log_ratio_20th_percentile, log_ratio_80th_percentile,
+        is_low_quintile, is_high_quintile, quintile_category,
+        sex, age_group
+    """
+    csv_path = PROCESSED_DATA_DIR / "prevalence_degree_analysis.csv"
+    if not csv_path.exists():
+        raise FileNotFoundError(
+            f"Missing {csv_path}. Run the prevalence-degree analysis first "
+            "(python pipeline.py or tapas.advanced_analysis.analyze_all_prevalence_degree)."
+        )
+    return pd.read_csv(csv_path)
+
+
+def generate_outlier_scatter_panel(
+    sex: str = "Female",
+    n_labels: int = 6,
+    output_name: Optional[str] = None,
+) -> None:
+    """
+    Generate the 4x2 panel figure of Degree vs Prevalence (log-log) for a
+    given sex, with one subplot per age group.
+
+    Each subplot consists of:
+      - A main scatter area (log-log) where every disease is plotted as a dot
+        colored by ICD chapter (A-N).  Outliers (quintile_category != 'middle')
+        are drawn as solid, borderless markers; non-outliers are
+        small and semi-transparent.
+      - A narrow right histogram showing the distribution of
+        log10(Degree / Prevalence) with dashed lines at the 20th/80th
+        percentile thresholds. Y-axis ticks are on the left (base of bars).
+
+    A shared legend of ICD Disease Categories is placed below the panels.
+
+    Parameters
+    ----------
+    sex : str
+        ``"Female"`` (default, Figure 2) or ``"Male"`` (Fig. S2).
+    n_labels : int
+        Number of outlier ICD codes to label per panel (highest |log_ratio|
+        deviation from the group median).
+    output_name : str or None
+        Base name for the saved file.  Defaults to
+        ``figure2_outlier_scatter_female`` /
+        ``figS2_outlier_scatter_male``.
+    """
+    logger.info(f"Generating Outlier Scatter Panels for {sex}...")
+
+    # -- Load data --
+    df_all = _load_prevalence_degree_data()
+    df = df_all[df_all["sex"] == sex].copy()
+
+    if df.empty:
+        logger.warning(f"No prevalence-degree data for sex={sex}. Skipping.")
+        return
+
+    df["icd_chapter"] = df["icd_code"].astype(str).str[0]
+    age_groups_ordered = [AGE_GROUPS[k] for k in sorted(AGE_GROUPS.keys())]
+
+    if output_name is None:
+        output_name = "figure2_outlier_scatter_female" if sex == "Female" else "figS2_outlier_scatter_male"
+
+    # -- Figure layout: 4 rows x 2 cols --
+    fig = plt.figure(figsize=(4.8, 9.0))
+    outer_gs = gridspec.GridSpec(
+        4, 2,
+        figure=fig,
+        wspace=0.48,
+        hspace=0.52,
+        bottom=0.07,
+        top=0.96,
+        left=0.09,
+        right=0.97,
+    )
+
+    for idx, age_label in enumerate(age_groups_ordered):
+        row, col = divmod(idx, 2)
+
+        # Inner grid: wide scatter + narrow histogram (flush, ticks on histogram left)
+        inner_gs = gridspec.GridSpecFromSubplotSpec(
+            1, 2,
+            subplot_spec=outer_gs[row, col],
+            width_ratios=[5, 1],
+            wspace=0.0,
+        )
+        ax_scatter = fig.add_subplot(inner_gs[0])
+        ax_hist = fig.add_subplot(inner_gs[1])
+
+        sub = df[df["age_group"] == age_label].copy()
+
+        if sub.empty:
+            ax_scatter.text(0.5, 0.5, "No data", transform=ax_scatter.transAxes,
+                            ha="center", va="center", fontsize=7, color="#999999")
+            ax_hist.axis("off")
+            continue
+
+        degree     = sub["degree"].values
+        prevalence = sub["prevalence"].values
+        log_ratio  = sub["log_ratio"].values
+        chapters   = sub["icd_chapter"].values
+        categories = sub["quintile_category"].values
+
+        is_outlier = categories != "middle"
+        is_normal  = ~is_outlier
+
+        # Non-outliers: small, faded
+        for ch in sorted(set(chapters)):
+            ch_color = _CHAPTER_COLOR_MAP.get(ch, "#CCCCCC")
+            mask = is_normal & (chapters == ch)
+            if mask.any():
+                ax_scatter.scatter(prevalence[mask], degree[mask],
+                                   s=8, c=ch_color, alpha=0.20,
+                                   edgecolors="none", zorder=1, rasterized=True)
+
+        # Outliers: solid, no border
+        for ch in sorted(set(chapters)):
+            ch_color = _CHAPTER_COLOR_MAP.get(ch, "#CCCCCC")
+            mask = is_outlier & (chapters == ch)
+            if mask.any():
+                ax_scatter.scatter(prevalence[mask], degree[mask],
+                                   s=20, c=ch_color, alpha=0.90,
+                                   edgecolors="none", zorder=3)
+
+        # ICD labels on top-N outliers by |deviation from group median|
+        if is_outlier.any():
+            outlier_sub = sub[is_outlier].copy()
+            outlier_sub["_abs_dev"] = (outlier_sub["log_ratio"] - sub["log_ratio"].median()).abs()
+            for _, r in outlier_sub.nlargest(n_labels, "_abs_dev").iterrows():
+                ax_scatter.annotate(r["icd_code"], (r["prevalence"], r["degree"]),
+                                    fontsize=5, fontweight="bold", alpha=0.95,
+                                    xytext=(3, 3), textcoords="offset points")
+
+        ax_scatter.set_xscale("log")
+        ax_scatter.set_yscale("log")
+        ax_scatter.set_title(f"Age Group {age_label}", fontsize=8, pad=3, loc="left")
+        ax_scatter.tick_params(labelsize=6, which="both")
+        ax_scatter.set_ylabel("Degree (log scale)" if col == 0 else "", fontsize=7)
+        ax_scatter.set_xlabel("Prevalence (log scale)" if row == 3 else "", fontsize=7)
+        ax_scatter.spines["top"].set_visible(False)
+        ax_scatter.spines["right"].set_visible(False)
+
+        # Right histogram: y-axis on left (base of bars)
+        valid_lr = log_ratio[np.isfinite(log_ratio)]
+        if len(valid_lr) > 0:
+            ax_hist.hist(valid_lr, bins=25, orientation="horizontal",
+                         color="#7F8C8D", alpha=0.55, edgecolor="white", linewidth=0.3)
+            p20 = sub["log_ratio_20th_percentile"].iloc[0]
+            p80 = sub["log_ratio_80th_percentile"].iloc[0]
+            ax_hist.axhline(p20, color="#3498DB", ls="--", lw=0.7, alpha=0.8)
+            ax_hist.axhline(p80, color="#E74C3C", ls="--", lw=0.7, alpha=0.8)
+
+        ax_hist.yaxis.set_label_position("left")
+        ax_hist.yaxis.tick_left()
+        ax_hist.tick_params(axis="y", labelsize=5, which="both")
+        ax_hist.set_xticks([])
+        ax_hist.set_ylabel("")
+        ax_hist.spines["top"].set_visible(False)
+        ax_hist.spines["right"].set_visible(False)
+        ax_hist.spines["bottom"].set_visible(False)
+
+    # Shared ICD chapter legend
+    all_chapters = sorted(df["icd_chapter"].unique())
+    legend_handles = [
+        Line2D([0], [0], marker="o", color="w",
+               markerfacecolor=_CHAPTER_COLOR_MAP.get(ch, "#CCCCCC"),
+               markeredgecolor="none", markersize=6, label=ch)
+        for ch in all_chapters
+    ]
+    fig.legend(handles=legend_handles, loc="lower center", ncol=len(all_chapters),
+               frameon=False, fontsize=7, title="ICD Disease Categories",
+               title_fontsize=7, handletextpad=0.3, columnspacing=0.8,
+               bbox_to_anchor=(0.5, 0.0))
+
+    save_figure(fig, output_name)
+    plt.close(fig)
+    logger.success(f"Saved outlier scatter panel: {output_name}")
+
+
+def generate_all_outlier_scatter_panels() -> None:
+    """Generate outlier scatter panels for both Female (Fig. 2) and Male (Fig. S2)."""
+    for sex in SEXES:
+        try:
+            generate_outlier_scatter_panel(sex=sex)
+        except FileNotFoundError as e:
+            logger.warning(str(e))
+        except Exception as e:
+            logger.error(f"Failed to generate outlier scatter panel for {sex}: {e}")
+            raise
+
+
 @app.command()
 def main():
     logger.info("Generating Panel Plots...")
@@ -881,6 +1083,10 @@ def main():
         generate_bridge_heatmap(df_bridge, _df_sinks, 'panel_bridge_edges_by_age_heatmap_short_icd_edges')
     else:
         logger.warning(f"Missing {bridge_path}. Skipping Bridge Edges plots.")
+
+    # --- Figure 2 / Fig. S2: Outlier Scatter Panels ---
+    logger.info("Generating Outlier Scatter Panels (Figure 2 + Fig. S2)...")
+    generate_all_outlier_scatter_panels()
 
 
 if __name__ == "__main__":
