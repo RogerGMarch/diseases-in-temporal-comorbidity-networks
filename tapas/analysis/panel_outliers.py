@@ -826,6 +826,12 @@ def _load_prevalence_degree_data() -> pd.DataFrame:
     """
     Load the precomputed prevalence-degree analysis CSV.
 
+    ``quintile_category`` reflects every node at/beyond the 20th/80th
+    percentile boundary (~40 % of each group).  This is the correct visual
+    definition for the scatter: all outer-quintile nodes are highlighted.
+    Labels are placed only on the curated top-N subset (see
+    ``generate_outlier_scatter_panel``).
+
     Expected columns:
         icd_code, degree, prevalence, log_ratio,
         log_ratio_20th_percentile, log_ratio_80th_percentile,
@@ -836,7 +842,7 @@ def _load_prevalence_degree_data() -> pd.DataFrame:
     if not csv_path.exists():
         raise FileNotFoundError(
             f"Missing {csv_path}. Run the prevalence-degree analysis first "
-            "(python pipeline.py or tapas.advanced_analysis.analyze_all_prevalence_degree)."
+            "(python pipeline.py)."
         )
     return pd.read_csv(csv_path)
 
@@ -885,6 +891,18 @@ def generate_outlier_scatter_panel(
 
     df["icd_chapter"] = df["icd_code"].astype(str).str[0]
     age_groups_ordered = [AGE_GROUPS[k] for k in sorted(AGE_GROUPS.keys())]
+    age_label_to_id = {v: k for k, v in AGE_GROUPS.items()}
+
+    # Load curated top-N outliers from Outliers_EXACT.csv for labelling
+    exact_path = PROCESSED_DATA_DIR / "Outliers_EXACT.csv"
+    _exact_keys: set = set()
+    if exact_path.exists():
+        _exact_df = pd.read_csv(exact_path)
+        _exact_df = _exact_df[_exact_df["Sex"] == sex]
+        _exact_keys = set(zip(_exact_df["Sex"], _exact_df["Age_Group"], _exact_df["ICD_Code"]))
+        logger.debug(f"Loaded {len(_exact_keys)} curated outlier labels from {exact_path.name}")
+    else:
+        logger.warning(f"Outliers_EXACT.csv not found; falling back to top-{n_labels} by |log_ratio| deviation.")
 
     if output_name is None:
         output_name = "figure2_outlier_scatter_female" if sex == "Female" else "figS2_outlier_scatter_male"
@@ -950,14 +968,26 @@ def generate_outlier_scatter_panel(
                                    s=20, c=ch_color, alpha=0.90,
                                    edgecolors="none", zorder=3)
 
-        # ICD labels on top-N outliers by |deviation from group median|
-        if is_outlier.any():
-            outlier_sub = sub[is_outlier].copy()
-            outlier_sub["_abs_dev"] = (outlier_sub["log_ratio"] - sub["log_ratio"].median()).abs()
-            for _, r in outlier_sub.nlargest(n_labels, "_abs_dev").iterrows():
-                ax_scatter.annotate(r["icd_code"], (r["prevalence"], r["degree"]),
-                                    fontsize=5, fontweight="bold", alpha=0.95,
-                                    xytext=(3, 3), textcoords="offset points")
+        # ICD labels — use the curated top-N from Outliers_EXACT (if available),
+        # otherwise fall back to the n_labels most extreme outer-quintile nodes.
+        age_id = age_label_to_id.get(age_label)
+        if _exact_keys and age_id is not None:
+            # Only label nodes that appear in the curated selection
+            label_mask = sub["icd_code"].apply(
+                lambda c: (sex, age_id, c) in _exact_keys
+            )
+            label_sub = sub[label_mask].copy()
+        elif is_outlier.any():
+            label_sub = sub[is_outlier].copy()
+            label_sub["_abs_dev"] = (label_sub["log_ratio"] - sub["log_ratio"].median()).abs()
+            label_sub = label_sub.nlargest(n_labels, "_abs_dev")
+        else:
+            label_sub = pd.DataFrame()
+
+        for _, r in label_sub.iterrows():
+            ax_scatter.annotate(r["icd_code"], (r["prevalence"], r["degree"]),
+                                fontsize=5, fontweight="bold", alpha=0.95,
+                                xytext=(3, 3), textcoords="offset points")
 
         ax_scatter.set_xscale("log")
         ax_scatter.set_yscale("log")
