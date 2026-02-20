@@ -22,6 +22,7 @@ from matplotlib.path import Path as MplPath
 from matplotlib.patches import PathPatch
 from matplotlib.lines import Line2D
 from matplotlib.ticker import LogLocator, NullFormatter
+from adjustText import adjust_text
 import typer
 from loguru import logger
 from pathlib import Path
@@ -975,11 +976,6 @@ def generate_outlier_scatter_panel(
         else:
             label_sub = pd.DataFrame()
 
-        for _, r in label_sub.iterrows():
-            ax_scatter.annotate(r["icd_code"], (r["prevalence"], r["degree"]),
-                                fontsize=5, fontweight="bold", alpha=0.95,
-                                xytext=(3, 3), textcoords="offset points")
-
         ax_scatter.set_xscale("log")
         ax_scatter.set_yscale("log")
         ax_scatter.set_title(f"Age Group {age_label}", fontsize=8, pad=3, loc="left")
@@ -988,6 +984,27 @@ def generate_outlier_scatter_panel(
         ax_scatter.set_xlabel("Prevalence (log scale)" if row == 3 else "", fontsize=7)
         ax_scatter.spines["top"].set_visible(False)
         ax_scatter.spines["right"].set_visible(False)
+
+        # Non-overlapping ICD labels — done after axes scales are set so
+        # adjust_text can use real data-coordinate limits
+        texts = []
+        for _, r in label_sub.iterrows():
+            texts.append(
+                ax_scatter.text(r["prevalence"], r["degree"], r["icd_code"],
+                                fontsize=5, fontweight="bold", alpha=0.95,
+                                clip_on=True)
+            )
+        if texts:
+            adjust_text(
+                texts,
+                ax=ax_scatter,
+                arrowprops=dict(arrowstyle="-", color="#888888", lw=0.5,
+                                shrinkA=2, shrinkB=2),
+                expand=(1.2, 1.4),
+                force_text=(0.3, 0.5),
+                force_points=(0.1, 0.2),
+                only_move={"points": "xy", "texts": "xy", "objects": "xy"},
+            )
 
         # Right histogram: y-axis on left (base of bars)
         valid_lr = log_ratio[np.isfinite(log_ratio)]
