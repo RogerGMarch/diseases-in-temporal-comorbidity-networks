@@ -40,7 +40,12 @@ plt.rcParams.update({
     'axes.labelsize': 8,
     'xtick.labelsize': 8,
     'ytick.labelsize': 8,
-    'legend.fontsize': 8
+    'legend.fontsize': 8,
+    'axes.linewidth': 0.5,
+    'xtick.major.width': 0.5,
+    'ytick.major.width': 0.5,
+    'xtick.minor.width': 0.4,
+    'ytick.minor.width': 0.4,
 })
 
 # Specific colors
@@ -990,7 +995,7 @@ def generate_outlier_scatter_panel(
         ax_scatter.set_yscale("log")
         ax_scatter.set_xlim(global_xlim)
         ax_scatter.set_ylim(global_ylim)
-        ax_scatter.set_title(f"Age Group {age_label}", fontsize=8, pad=3, loc="left")
+        ax_scatter.set_title(f"Age Group {age_label}", fontsize=8, pad=3, loc="left", fontweight="bold")
         ax_scatter.tick_params(labelsize=6, which="both")
         ax_scatter.set_ylabel("Degree (log scale)" if col == 0 else "", fontsize=7)
         ax_scatter.set_xlabel("Prevalence (log scale)" if row == 3 else "", fontsize=7)
