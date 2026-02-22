@@ -907,6 +907,16 @@ def generate_outlier_scatter_panel(
     if output_name is None:
         output_name = "figure2_outlier_scatter_female" if sex == "Female" else "figS2_outlier_scatter_male"
 
+    # -- Compute global axis limits for consistent comparison across subplots --
+    all_prev = df["prevalence"].replace(0, np.nan).dropna()
+    all_deg  = df["degree"].replace(0, np.nan).dropna()
+    all_lr   = df["log_ratio"].replace([np.inf, -np.inf], np.nan).dropna()
+
+    global_xlim = (all_prev.min() * 0.7, all_prev.max() * 1.4)
+    global_ylim = (all_deg.min()  * 0.7, all_deg.max()  * 1.4)
+    global_hist_ylim = (all_lr.min() - 0.1 * all_lr.std(),
+                        all_lr.max() + 0.1 * all_lr.std())
+
     # -- Figure layout: 4 rows x 2 cols --
     fig = plt.figure(figsize=(4.8, 9.0))
     outer_gs = gridspec.GridSpec(
@@ -978,6 +988,8 @@ def generate_outlier_scatter_panel(
 
         ax_scatter.set_xscale("log")
         ax_scatter.set_yscale("log")
+        ax_scatter.set_xlim(global_xlim)
+        ax_scatter.set_ylim(global_ylim)
         ax_scatter.set_title(f"Age Group {age_label}", fontsize=8, pad=3, loc="left")
         ax_scatter.tick_params(labelsize=6, which="both")
         ax_scatter.set_ylabel("Degree (log scale)" if col == 0 else "", fontsize=7)
@@ -1010,11 +1022,12 @@ def generate_outlier_scatter_panel(
         valid_lr = log_ratio[np.isfinite(log_ratio)]
         if len(valid_lr) > 0:
             ax_hist.hist(valid_lr, bins=25, orientation="horizontal",
-                         color="#7F8C8D", alpha=0.55, edgecolor="white", linewidth=0.3)
+                         color="#7F8C8D", alpha=0.55, edgecolor="grey", linewidth=0.3)
             p20 = sub["log_ratio_20th_percentile"].iloc[0]
             p80 = sub["log_ratio_80th_percentile"].iloc[0]
             ax_hist.axhline(p20, color="#3498DB", ls="--", lw=0.7, alpha=0.8)
             ax_hist.axhline(p80, color="#E74C3C", ls="--", lw=0.7, alpha=0.8)
+        ax_hist.set_ylim(global_hist_ylim)
 
         ax_hist.yaxis.set_label_position("left")
         ax_hist.yaxis.tick_left()
